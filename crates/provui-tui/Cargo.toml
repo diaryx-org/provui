@@ -1,0 +1,37 @@
+[package]
+name = "provui-tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+readme.workspace = true
+license.workspace = true
+description = "A terminal frontend for prov documents: leaf over the prose body and flower over the frontmatter, in one window over one DocumentSession."
+# Not on crates.io, and cannot be: it embeds `flower-ratatui`, which is itself
+# unpublished. The point of this crate is to exercise `provui-core` under a real
+# event loop, and it is `cargo run` that does that — nothing downstream consumes
+# it as a library.
+publish = false
+
+# `cargo run -- note.md` runs `provui`, the same way leaf-tui's binary is `leaf`
+# and flower-tui's is `flower`.
+[[bin]]
+name = "provui"
+path = "src/main.rs"
+
+[dependencies]
+# The composition this is a frontend for. Everything about prov documents —
+# parsing, the two editors, the reconciling save — happens in here; this crate
+# only draws and routes keys.
+provui-core = { path = "../provui-core", version = "0.1.0" }
+# Named directly for `Mode` (is the metadata pane mid-edit?) and `ViewMode` (the
+# page projection the widget draws), which are decisions a host makes.
+flower-core.workspace = true
+# The two embeddable widgets. See the workspace manifest for why they are
+# consumed by version rather than by path.
+flower-ratatui.workspace = true
+leaf-ratatui.workspace = true
+# TUI framework; we use its re-exported crossterm so backend versions can't skew
+# with the two widgets', which do the same.
+ratatui = "0.29"
+anyhow = "1"

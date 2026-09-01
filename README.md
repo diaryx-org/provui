@@ -70,12 +70,13 @@ instead; this is the floor it builds on, not a policy it inherits.
 
 The core is frontend-neutral, and the plan is to prove that by using it twice.
 
-**First: a TUI**, embedding [`leaf-ratatui`](https://github.com/diaryx-org/leaf)
-and [`flower-ratatui`](https://github.com/diaryx-org/flower) — the two widget
-crates that already exist for exactly these two editors. No FFI: it is one Rust
-binary linking one copy of each library, which makes it the cheapest possible
-test of whether the composition holds up under a real event loop, and the
-fastest thing to iterate the core against.
+**First: a TUI** — `provui-tui`, which exists (see [Usage](#usage) below). It
+embeds [`leaf-ratatui`](https://github.com/diaryx-org/leaf) and
+[`flower-ratatui`](https://github.com/diaryx-org/flower) — the two widget crates
+that already exist for exactly these two editors. No FFI: it is one Rust binary
+linking one copy of each library, which makes it the cheapest possible test of
+whether the composition holds up under a real event loop, and the fastest thing
+to iterate the core against.
 
 **Later: SwiftUI over UniFFI**, against the same core. The hardest binding
 already exists — `leaf` ships `leaf-ffi` + `leaf-swift` (LeafUI), a full
@@ -88,6 +89,100 @@ one binary, which is the failure this arrangement exists to avoid.
 Both frontends drive the same `DocumentSession`. If the TUI needs something the
 core does not expose, that is the core's gap, and fixing it there is what makes
 the second frontend cheap.
+
+## Usage
+
+`provui-tui`'s binary is `provui`, following the family: leaf-tui's is `leaf`
+and flower-tui's is `flower`.
+
+```sh
+cargo run -p provui-tui -- path/to/document.md
+```
+
+It opens the file through `DocumentSession` and draws the document's two regions
+with the two widgets that exist for them — `leaf-ratatui` over the prose,
+`flower-ratatui` over the frontmatter. Everything about the document belongs to
+the session; the binary owns the terminal, the split, the focus and one status
+line, and nothing else.
+
+### The panes
+
+```
+ flower — ▶ document.md ●            ┐
+ ‹document›                          │  metadata band: a third of the height,
+  title      New Title               │  bounded to 9…14 rows
+  draft      true                    │
+  j/k · l/h in/out · e edit · x del  ┘
+   leaf — body                       ┐  body label (▶ marks the focused pane)
+ # Heading                           │
+                                     │  the body gets every row the band and
+ Original body.                      │  the status line do not
+                                     ┘
+ document.md ○ saved  focus: body   ^W pane · ^S save · ^Q quit
+```
+
+**A horizontal band, not a side-by-side split.** That is the widgets' decision
+rather than a taste: flower collapses its own two-pane page view below 64
+columns, and half of an 80-column terminal is 40 — so a vertical split would
+silently degrade the metadata view on the most ordinary terminal there is. Prose
+wants the width too. Stacking gives both panes the full width and spends the one
+scarce dimension, height, on the surface that is the point.
+
+The band is sized against `flower_ratatui::page_room`, which says how many item
+rows survive the widget's own three rows of chrome, and the model's inline budget
+is refit to the **pane's** height rather than the terminal's on every frame. The
+floor of 9 rows is where flower's budget stops using extra room anyway; the
+ceiling of 14 is where a band of mostly-empty list starts costing the prose. When
+the terminal is too short for both minimums the split is **abandoned rather than
+shrunk**, and whichever pane holds the keyboard takes the screen. A whole-file
+config document has no prose region at all, and is all metadata.
+
+### Focus
+
+Exactly one pane owns the keyboard. **`^W` switches it** — the window key, in a
+host that has windows. The status line always names the pane that has it, and
+the focused pane's label carries a `▶`.
+
+`^W` is taken by the host *before* either widget sees the event, and it has to
+be: leaf swallows every Ctrl and Alt chord it is handed, bound or not, so a host
+cannot discover a free one from the return value; and flower reads `key.code`
+while ignoring modifiers entirely, so an un-intercepted `^X` would arrive as `x`
+and delete a key. `^W` is unbound in leaf's Ctrl table and is not a bare letter
+for flower to navigate on, which is what makes it free to take.
+
+A click also moves focus to the pane it lands in. A focus switch is refused
+while the metadata pane has a value open for editing — leaving mid-edit would
+strand a half-typed value in a pane no longer taking keys — and says so.
+
+| Key | |
+|---|---|
+| `^W` | switch panes |
+| `^S` | save the document — **both** regions, from either pane |
+| `^Q` | quit; refused once while there are unsaved changes |
+| body pane | leaf's keys (`leaf --help`) |
+| metadata pane | `j`/`k` move · `l`/`h` in/out · `e` edit · `x` delete |
+
+### Saving, and what is not here
+
+A save from *either* pane writes the whole document: `DocumentSession::save`
+reconciles the body edits back into the metadata editor's document and writes the
+reassembled bytes, so the unit that gets saved is the file, not the pane you were
+standing in. Dirtiness is likewise the session's answer, covering both regions.
+leaf's own `Doc::save` is deliberately unused — this body is a *region* of a
+file rather than a file, and the `Doc` has no path.
+
+leaf's `Outcome` is a full editor's surface, and `leaf-tui` is where all of it is
+handled. This host implements the three outcomes that are about the document —
+`Save`, `Quit`, `Continue` — and **degrades the rest to a status-line message**
+rather than dropping them: `Copy`/`Cut`/`Paste`, `SaveAs`, `New`, the link,
+language and media prompts, the command palette, `Find`/`Replace`, `Help`, and
+the right-click context menu all say what they are and where they live. A key
+that does nothing here is at least a key that admits it.
+
+Two things do work without any of that: bracketed paste is enabled, so the
+terminal's own paste arrives as one `Event::Paste` and goes into the body as a
+single edit rather than as N keypresses; and mouse capture is on, so leaf gets
+click-to-place-caret, drag-select and scrolling.
 
 ## Composing over it
 
@@ -134,9 +229,33 @@ needs `zig` on `PATH`. `nix develop` in `prov` or
 [`nix`](https://github.com/diaryx-org/nix) provides one.
 
 ```sh
-cargo test
-cargo clippy --all-targets -- -D warnings
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+**`provui-tui` additionally needs the two widget crates, which are not on
+crates.io yet.** They are consumed the prepublication way — by the version each
+repo declares, with a `[patch.crates-io]` supplying it — so that no manifest here
+carries a path across a repository boundary and nothing has to be undone to
+publish. In this working tree that patch is `~/diaryx/.cargo/config.toml`, copied
+from `~/diaryx/.cargo/patches.toml` with four entries uncommented:
+
+```toml
+leaf-core      = { path = "leaf/crates/leaf-core" }
+leaf-ratatui   = { path = "leaf/crates/leaf-ratatui" }
+flower-core    = { path = "flower/crates/flower-core" }
+flower-ratatui = { path = "flower/crates/flower-ratatui" }
+```
+
+The two **cores** have to be patched alongside the widgets, not just the widgets.
+Each widget path-depends on its own core inside its own workspace, so patching
+only the widget leaves the graph holding two copies of that core — a registry one
+under `provui-core` and a path one under the widget — and `Model` and `Doc` stop
+being the same type across the two. It surfaces as a baffling type error rather
+than as anything mentioning duplicate crates. `cargo tree -i leaf-core` should
+show exactly one.
+
+`provui-core` alone needs none of this: it depends only on published crates.
 
 ## License
 
