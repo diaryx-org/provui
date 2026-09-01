@@ -6,7 +6,7 @@ rust-version.workspace = true
 repository.workspace = true
 readme.workspace = true
 license.workspace = true
-description = "A terminal frontend for prov documents: leaf over the prose body and flower over the frontmatter, in one window over one DocumentSession."
+description = "A terminal frontend for prov documents: leaf over the prose body and flower over the frontmatter, in one window over one DocumentSession, with link-following across the workspace."
 # Not on crates.io, and cannot be: it embeds `flower-ratatui`, which is itself
 # unpublished. The point of this crate is to exercise `provui-core` under a real
 # event loop, and it is `cargo run` that does that — nothing downstream consumes

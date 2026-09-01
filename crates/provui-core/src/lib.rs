@@ -25,19 +25,52 @@
 //! - [`config_schema`] — the same trick turned on the config document itself, so
 //!   the metadata editor a frontend already ships can edit a workspace's policy
 //!   instead of a hand-written settings form.
+//! - [`facets`] — what each frontmatter key *is* to prov: a relation, a pointer
+//!   at machinery, identity, policy, a declared field, or a value prov only
+//!   carries. Read off the workspace's own vocabulary rather than a list this
+//!   crate keeps.
+//! - [`links`] — the links a document declares, each with the metadata **path**
+//!   it sits at, so "is the row under the cursor a link?" is a question with an
+//!   answer. Lexical: no filesystem, no registry.
+//! - [`workspace`] — [`WorkspaceView`], which finds the workspace a document
+//!   belongs to and resolves a link to a document you can open. The one piece
+//!   that reads the filesystem, and read-only.
 //!
-//! Scope: the single-document metadata surface (prov's `edit` layer). Relation
-//! fields that maintain inverse links *across* documents belong to prov's `mutate`
-//! layer — a later, relationship-aware backend, not this one.
+//! ## What this crate will not do for you
+//!
+//! It classifies, and it never arranges. Nothing here hides a row, sinks one,
+//! reorders them, or makes one read-only — even where it plainly knows enough
+//! to: [`Facets`] can tell you `id` is minted and `contents` is structure, and
+//! hands you the lists shaped to go straight into flower's `derived` and
+//! `demoted` sets, and then stops.
+//!
+//! That is deliberate. An application over prov usually does separate prov's
+//! structure from the values a person typed — diaryx does — but *how* is a
+//! product decision, and a mobile inspector, a terminal band and a settings
+//! sheet do not want the same one. The classification is general and lives here
+//! once; the arrangement is local and lives in the frontend. `provui-tui`'s
+//! `nav` module is a worked example of the whole policy, and it is two lines.
+//!
+//! Scope: the single-document metadata surface (prov's `edit` layer), plus
+//! read-only navigation across documents. Relation fields that *maintain inverse
+//! links* across documents belong to prov's `mutate` layer — a later,
+//! relationship-aware backend, not this one. Following a link reads; retargeting
+//! one would write two documents, and this crate's backend edits one.
 
 pub mod config_schema;
+pub mod facets;
+pub mod links;
 pub mod rules;
 pub mod schema;
 mod session;
+pub mod workspace;
 
 pub use config_schema::{CONFIG_READONLY_KEYS, config_schema};
+pub use facets::{Facet, Facets};
+pub use links::{MetaLink, TargetKind, link_at, links_in, links_under};
 pub use schema::schema_from_config;
 pub use session::{DocumentSession, SessionError};
+pub use workspace::{Destination, WorkspaceView};
 
 use fig::Value;
 use flower_core::tree::{self, to_fig};

@@ -48,6 +48,21 @@ handling and nothing else.
   `fixity` is one of three words. With it, `id_storage` becomes a picker instead
   of free text, and a typo like `fixity: alll` — which prov silently ignores,
   keeping the default — stops being reachable.
+- **`facets`** — what each frontmatter key *is* to prov: a relation, a one-way
+  pointer at machinery, identity, the policy block, a declared field, or a value
+  prov only carries. Read off the workspace's own vocabulary rather than a list
+  kept here, so a workspace that retracts `link_of` gets an ordinary field and
+  one that declares `see_also` gets a followable link, without a line changing.
+- **`links`** — the links a document's frontmatter declares, each carrying the
+  metadata **path** it sits at. prov already extracts a document's edges; what an
+  editor additionally needs is *where* each one is, so that "the row under the
+  cursor — is that a link?" is a question with an answer. Lexical throughout: no
+  filesystem, no registry, no claim anything exists.
+- **`WorkspaceView`** — the step that needs a workspace to take it in. It finds
+  the workspace a document belongs to, resolves the effective config and the
+  vocabularies it points at, and turns a link into a document you can open —
+  absolute, and checked against the disk. Read-only, and that is not temporary:
+  see [Scope](#scope).
 
 Every spelling in `config_schema` is prov's own. The term lists mirror
 `prov::diagnose`'s accepted values, and the tests assert exactly that: each
@@ -57,14 +72,57 @@ ignores.
 
 ## Scope
 
-The single-document metadata surface — prov's `edit` layer. Relation fields that
-maintain inverse links *across* documents belong to prov's `mutate` layer, which
-wants a later, relationship-aware backend rather than a wider version of this
-one.
+The single-document metadata surface — prov's `edit` layer — plus **read-only**
+navigation across documents.
+
+Following a link reads. *Retargeting* one does not: a relation field is half of a
+pair prov maintains bidirectionally, so writing `contents` in one document means
+writing `part_of` in another, and that is prov's `mutate` layer. The metadata
+backend here edits one document's bytes and has no way to touch a second, which
+is exactly why the line is where it is. A frontend may follow a link with what is
+here and must not conclude it can retarget one.
 
 Saving writes bytes directly. A frontend that wants fixity and `updated`
 restamping maintained routes the write through prov's `Storage`/`mutate` layer
 instead; this is the floor it builds on, not a policy it inherits.
+
+## Structure, values, and what this crate refuses to decide
+
+A prov document's frontmatter holds two kinds of thing side by side, and they
+look identical: keys prov reads to build the workspace (`contents` is an edge,
+`id` is identity, `prov:` is policy) and keys prov merely carries (`mood:
+rainy`). A schema-free editor draws `id` and `mood` as the same row and offers to
+let you type into both.
+
+`facets` is the answer to which is which, and it is **only** the answer.
+Nothing in this crate hides a row, sinks one, reorders them, or makes one
+read-only — even where it plainly knows enough to. `Facets` will tell you that
+`id` is minted by the workspace and that `contents` is structure, and hand you
+those lists already shaped for flower's `derived` and `demoted` sets, and then
+stop.
+
+That is a deliberate answer to a real question. An application over prov usually
+*does* separate the two halves — diaryx puts prov's structure in a sidebar and
+gives the form to the user-defined values — and it is a good design. It is not a
+general one. A mobile inspector, an 11-row terminal band and a settings sheet do
+not want the same split, and a core that picked one would be a core each frontend
+had to work around. So the classification is general and lives here once; the
+arrangement is local and lives in the frontend.
+
+What that buys is measured in lines. `provui-tui`'s whole policy — the keys the
+workspace maintains decline edits, and prov's structure sinks below the
+document's own values — is two:
+
+```rust
+let mut session = DocumentSession::open_managed(path, schema, facets.managed_key_names())?;
+session.metadata_mut().set_demoted(facets.structural_keys(session.meta()));
+```
+
+A frontend that wants a flat list writes neither.
+
+The same principle is why `document_rules` and `config_rules` are public and
+first-match-wins, and why `rules` is public at all: see
+[Composing over it](#composing-over-it).
 
 ## Frontends
 
@@ -99,11 +157,23 @@ and flower-tui's is `flower`.
 cargo run -p provui-tui -- path/to/document.md
 ```
 
-It opens the file through `DocumentSession` and draws the document's two regions
-with the two widgets that exist for them — `leaf-ratatui` over the prose,
-`flower-ratatui` over the frontmatter. Everything about the document belongs to
-the session; the binary owns the terminal, the split, the focus and one status
-line, and nothing else.
+It finds the workspace the file belongs to, opens the file through
+`DocumentSession` under whatever schema that workspace implies, and draws the
+document's two regions with the two widgets that exist for them —
+`leaf-ratatui` over the prose, `flower-ratatui` over the frontmatter. Everything
+about the document belongs to the session; the binary owns the terminal, the
+split, the focus, the navigation and one status line, and nothing else.
+
+There is a smaller door for looking rather than editing: `cargo run --example
+inspect -p provui-core -- <file>` prints what each frontmatter key is to prov and
+where each of its links lands, which is the whole of `facets` + `links` +
+`WorkspaceView` in forty lines of caller.
+
+A file that belongs to no workspace still opens — that is the ordinary state of a
+markdown file — with no schema and with links resolved by path alone. A `⌂` at
+the head of the status line is how it says which of the two you are in, because
+that is the fact that decides whether there are pickers and whether `id:` links
+resolve.
 
 ### The panes
 
@@ -112,13 +182,15 @@ line, and nothing else.
  ‹document›                          │  metadata band: a third of the height,
   title      New Title               │  bounded to 9…14 rows
   draft      true                    │
+  part_of    ↑ The Vault             │  prov's structure, sunk below the
+  id         ajp7eq                  │  document's own values
   j/k · l/h in/out · e edit · x del  ┘
    leaf — body                       ┐  body label (▶ marks the focused pane)
  # Heading                           │
                                      │  the body gets every row the band and
  Original body.                      │  the status line do not
                                      ┘
- document.md ○ saved  focus: body   ^W pane · ^S save · ^Q quit
+ ⌂ document.md ○ saved  focus: body   ^W pane · ^S save · ^Q quit
 ```
 
 **A horizontal band, not a side-by-side split.** That is the widgets' decision
@@ -158,9 +230,37 @@ strand a half-typed value in a pane no longer taking keys — and says so.
 |---|---|
 | `^W` | switch panes |
 | `^S` | save the document — **both** regions, from either pane |
+| `^G` | follow the link under the metadata cursor |
+| `^O` | back to the document you followed from |
 | `^Q` | quit; refused once while there are unsaved changes |
 | body pane | leaf's keys (`leaf --help`) |
 | metadata pane | `j`/`k` move · `l`/`h` in/out · `e` edit · `x` delete |
+
+### Following links
+
+Some of a prov document's frontmatter keys are links, and a workspace is what
+makes them resolvable. **`^G` opens the document the metadata cursor is standing
+on** and **`^O` returns**, which makes this a two-key browser over the spanning
+tree: `^G` on `part_of` goes up, `^G` on a `contents` item goes down.
+
+Both are taken before the widgets for the same reason `^W` is, and both are free
+in leaf's Ctrl table — `^G` for *go*, `^O` for the jump-back every vi has. The
+back chord is advertised in the status line on arrival rather than in the
+standing hints, which is exactly when there is something to go back to.
+
+Following is the **metadata pane's** gesture: from the body there is no row to be
+standing on, and following whatever the other pane was last left on would be a
+guess, so the host says so instead. A row that is not a link says that too, and
+so does a link that lands somewhere that is not a file you can open — a URL, a
+`#locator` into this document, a reference into a workspace prov cannot locate,
+or a target that is simply not on disk. Each of those is a real answer rather
+than a failure, and the status line gives it.
+
+Leaving a document with **unsaved changes is refused**, with no second-press
+escape hatch. Quitting has one because quitting twice discards work you were
+told about and meant to discard; following a link is a *reading* gesture, and an
+edit lost to one would be an edit lost to something nobody thinks of as
+destructive.
 
 ### Saving, and what is not here
 
@@ -204,6 +304,21 @@ Prepending is what makes it an overlay rather than only an addition: an app that
 wants a narrower vocabulary for a key this crate governs openly can shadow the
 generic rule. Appending would leave the generic rule winning and the app's rule
 silently dead — which is why there is a test asserting the order.
+
+`document_rules` is the same door one document over, for a **content**
+document's frontmatter, and the ordering inside it is the same argument made
+twice. A workspace's `fields` declarations come first, prov's own kernel keys
+(`title`, `id`, `content`/`manifest`/`attachment`/`content_hash`, and the root's
+inline `prov:` block) come last — so a workspace that declares `fields.title`
+shadows prov's rule for it rather than being shadowed by it, and an app that
+prepends shadows both.
+
+That the inline `prov:` block is governed at all falls out of stating the
+vocabulary once. prov's spec says workspace policy has two homes and the same
+keys in each — nested under `prov:` in the root, at top level in a config
+document — so `kernel_rules` re-roots `config_rules` one key deeper rather than
+keeping a second copy. A term added to the config schema reaches the inline block
+in the same commit, because it is the same list.
 
 The `provui_core::rules` module is public for the same reason: an overlay's rows
 should come out looking like the ones beside them, with the same tints and the

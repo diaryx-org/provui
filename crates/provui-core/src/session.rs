@@ -28,11 +28,16 @@
 use std::path::{Path, PathBuf};
 
 use fig::Value;
-use flower_core::{Model, Schema, Seg};
+use flower_core::{Model, Schema, Seg, ViewMode};
 use leaf_core::{Doc, Format as BodyFormat};
 use prov::{Document, MetaCarrier};
 
 use crate::ProvBackend;
+
+/// The answer for a document whose metadata block does not resolve — a `&Value`
+/// to hand back without an allocation or an `Option` every caller would unwrap
+/// the same way.
+static EMPTY_META: Value = Value::Null;
 
 /// A session error, carrying a human-readable message. UniFFI-friendly to widen
 /// into a typed enum later.
@@ -97,6 +102,34 @@ impl DocumentSession {
         Self::open_with(path, format, Some(schema))
     }
 
+    /// Open a prov document declaring the keys the **workspace** maintains, so
+    /// the metadata model draws their rows and declines every edit to them.
+    ///
+    /// `derived` is
+    /// [`Facets::managed_key_names`](crate::Facets::managed_key_names) — `id`,
+    /// `content_hash`, and whatever the workspace named as its `updated` stamp.
+    /// It is a separate entry point rather than something
+    /// [`open_with_schema`](Self::open_with_schema) does for you because
+    /// declining an edit is a *policy*, and a repair tool that means to rewrite a
+    /// stale `id` is as legitimate a frontend as an editor that must not. This
+    /// crate hands over the list and lets the frontend decide (see
+    /// [`crate::facets`]); most editors want it, and this is the one line that
+    /// says so.
+    ///
+    /// The set has to arrive here rather than being applied afterwards: flower
+    /// takes it before it builds its first row list.
+    pub fn open_managed(
+        path: impl Into<PathBuf>,
+        schema: Option<Schema>,
+        derived: Vec<String>,
+    ) -> Result<Self, SessionError> {
+        let path = path.into();
+        let format = body_format_of(&path);
+        let text = std::fs::read_to_string(&path)
+            .map_err(|e| SessionError(format!("reading {}: {e}", path.display())))?;
+        Self::build(path, &text, format, schema, derived)
+    }
+
     /// Open a prov document from disk, parsing the body as `body_format`, with an
     /// optional workspace schema.
     pub fn open_with(
@@ -119,6 +152,17 @@ impl DocumentSession {
         body_format: BodyFormat,
         schema: Option<Schema>,
     ) -> Result<Self, SessionError> {
+        Self::build(path, text, body_format, schema, Vec::new())
+    }
+
+    /// The one constructor the rest are written in terms of.
+    fn build(
+        path: impl Into<PathBuf>,
+        text: &str,
+        body_format: BodyFormat,
+        schema: Option<Schema>,
+        derived: Vec<String>,
+    ) -> Result<Self, SessionError> {
         let path = path.into();
         let parsed = Document::parse(&path, text).map_err(se)?;
         let has_body = matches!(parsed.carrier, Some(MetaCarrier::Fenced(_)));
@@ -128,7 +172,11 @@ impl DocumentSession {
             None => ProvBackend::open(&path, text),
         }
         .map_err(se)?;
-        let metadata = Model::new(backend).map_err(se)?;
+        // `with_managed`, not `new`: a derived key keeps its row and declines
+        // every edit, which is a different thing from hiding it. Empty `hidden`
+        // — nothing about a prov document is a key this host should make
+        // invisible, and a frontend that wants one says so itself.
+        let metadata = Model::with_managed(backend, Vec::new(), derived).map_err(se)?;
         let body = Doc::from_source(parsed.body, body_format).map_err(se)?;
         let saved_body = body.source.clone();
 
@@ -157,6 +205,30 @@ impl DocumentSession {
 
     pub fn metadata_mut(&mut self) -> &mut Model<ProvBackend> {
         &mut self.metadata
+    }
+
+    /// The metadata value tree — what [`crate::links`] and [`crate::facets`] ask
+    /// their questions of.
+    ///
+    /// The model's own copy, not a reparse: it is rebuilt on every edit, so this
+    /// is current and free.
+    pub fn meta(&self) -> &Value {
+        self.metadata.value_at(&[]).unwrap_or(&EMPTY_META)
+    }
+
+    /// The metadata path the cursor is on, whichever projection the model is
+    /// showing.
+    ///
+    /// flower has two — a flat row list and a page stack — and asks the question
+    /// a different way in each. A frontend that wants "the row under the cursor"
+    /// should not have to know which one it set, least of all a frontend that
+    /// switches between them; getting it wrong reads as a link that follows the
+    /// wrong document rather than as an error.
+    pub fn cursor_path(&self) -> Option<Vec<Seg>> {
+        match self.metadata.view() {
+            ViewMode::Pages => self.metadata.page_item().map(|item| item.path.clone()),
+            _ => self.metadata.selected_path(),
+        }
     }
 
     /// The body editor.
@@ -243,6 +315,35 @@ Original body.
         assert!(out.contains("Edited: "), "body edit:\n{out}");
         assert!(out.contains("Original body."), "rest of body:\n{out}");
         assert!(out.starts_with("---\n"), "fences:\n{out}");
+    }
+
+    /// A key the workspace maintains keeps its row and refuses the edit — the
+    /// difference between "not shown" and "not yours to type".
+    #[test]
+    fn a_managed_key_is_drawn_and_declines_every_edit() {
+        const WITH_ID: &str = "---\ntitle: A Note\nid: ajp7eq\nmood: rainy\n---\n# Note\n";
+        let path = std::env::temp_dir().join("provui_core_session_managed.md");
+        let _ = std::fs::remove_file(&path);
+        std::fs::write(&path, WITH_ID).unwrap();
+
+        let facets = crate::Facets::default();
+        let mut session =
+            DocumentSession::open_managed(&path, None, facets.managed_key_names()).unwrap();
+
+        // Drawn: the row is there, with its value.
+        assert_eq!(preview_of(&session, "id").as_deref(), Some("ajp7eq"));
+        assert!(session.metadata().is_derived(&[Seg::Key("id".into())]));
+
+        // And declined: the document is untouched and still clean.
+        session.set_metadata(&[Seg::Key("id".into())], Value::Str("typed".into()));
+        assert!(!session.dirty(), "a derived key takes no edit");
+        assert_eq!(preview_of(&session, "id").as_deref(), Some("ajp7eq"));
+
+        // An ordinary key beside it is unaffected.
+        session.set_metadata(&[Seg::Key("mood".into())], Value::Str("clear".into()));
+        assert!(session.dirty());
+
+        let _ = std::fs::remove_file(&path);
     }
 
     /// The whole composition, end to end on disk: open → edit both regions →

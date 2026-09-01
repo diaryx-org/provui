@@ -12,7 +12,13 @@ use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 
-use crate::{App, FOCUS_CHORD, Focus};
+use crate::{App, FOCUS_CHORD, FOLLOW_CHORD, Focus};
+
+/// The two host chords, written once so the hint list is a list of `&str`.
+static PANE_HINT: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| format!("{FOCUS_CHORD} pane"));
+static FOLLOW_HINT: std::sync::LazyLock<String> =
+    std::sync::LazyLock::new(|| format!("{FOLLOW_CHORD} follow"));
 
 /// The smallest metadata band worth drawing.
 ///
@@ -188,13 +194,53 @@ fn dim() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+/// The key hints, trimmed to what is actually left of the line.
+///
+/// A `Line` clips silently on the right, so a hint set that overflows loses its
+/// tail without saying so — and the tail is where `^Q quit` is, which is the one
+/// hint a reader who is stuck actually needs. Dropping from the **front**
+/// instead gives up the most guessable chords first: everyone knows `^S` saves,
+/// and nobody guesses that `^G` follows a link.
+///
+/// The list is per pane because the keys are. Following is the metadata cursor's
+/// gesture and means nothing from the body, so the body's list does not offer
+/// it.
+fn hints(focus: Focus, room: usize) -> Option<String> {
+    // Least worth keeping first — the order this drops in.
+    let mut hints = vec!["^S save"];
+    if matches!(focus, Focus::Metadata) {
+        hints.push(&FOLLOW_HINT);
+    }
+    hints.push(&PANE_HINT);
+    hints.push("^Q quit");
+
+    while !hints.is_empty() {
+        let line = hints.join(" · ");
+        if line.chars().count() <= room {
+            return Some(line);
+        }
+        hints.remove(0);
+    }
+    None
+}
+
 /// The one line the host owns: which file, which pane has the keyboard, whether
 /// there is anything unsaved, and how to change the first two of those.
 fn status_line(f: &mut Frame, area: Rect, app: &App, session: &DocumentSession) {
-    let mut spans = vec![Span::styled(
+    let mut spans = Vec::new();
+
+    // Two characters for the fact that changes the most: in a workspace there is
+    // a schema behind the pickers and `id:` links resolve, and outside one
+    // neither is true. It goes here rather than in a message because it is
+    // constant for the session, and a message that never changes is a message a
+    // reader stops seeing.
+    if app.nav.has_workspace() {
+        spans.push(Span::styled(" ⌂", Style::default().fg(Color::Cyan)));
+    }
+    spans.push(Span::styled(
         format!(" {} ", app.name),
         Style::default().add_modifier(Modifier::BOLD),
-    )];
+    ));
 
     // Dirtiness is the *document's*, not either editor's: `DocumentSession`
     // answers for the metadata model and the body buffer together, which is the
@@ -227,10 +273,13 @@ fn status_line(f: &mut Frame, area: Rect, app: &App, session: &DocumentSession) 
                 Style::default().fg(Color::Black).bg(Color::Green),
             ));
         }
-        None => spans.push(Span::styled(
-            format!("  {FOCUS_CHORD} pane · ^S save · ^Q quit"),
-            dim(),
-        )),
+        None => {
+            let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
+            let room = (area.width as usize).saturating_sub(used + 2);
+            if let Some(hints) = hints(app.focus, room) {
+                spans.push(Span::styled(format!("  {hints}"), dim()));
+            }
+        }
     }
 
     f.render_widget(Line::from(spans), area);
@@ -306,6 +355,34 @@ mod tests {
         let on_metadata = layout(short, Focus::Metadata, true);
         assert!(on_metadata.body.is_none(), "no body pane");
         assert_eq!(on_metadata.metadata.expect("band").height, 11);
+    }
+
+    /// The hint list gives up its most guessable entries first, so the way out
+    /// is the last thing to go rather than the first — which is what silent
+    /// right-edge clipping would have done instead.
+    #[test]
+    fn the_hints_drop_the_guessable_chords_before_the_one_nobody_guesses() {
+        let full = hints(Focus::Metadata, 80).expect("a roomy line");
+        assert!(full.starts_with("^S save"), "everything, in order: {full}");
+        assert!(full.contains(FOLLOW_CHORD) && full.ends_with("^Q quit"));
+
+        // Room for three of the four: the save hint goes, because everybody
+        // already knows it.
+        let room = full.chars().count() - 1;
+        let trimmed = hints(Focus::Metadata, room).expect("still something");
+        assert!(!trimmed.contains("^S save"), "{trimmed}");
+        assert!(trimmed.contains(FOLLOW_CHORD), "{trimmed}");
+        assert!(trimmed.ends_with("^Q quit"), "{trimmed}");
+
+        // Whatever the room, what is shown fits it — that is the whole promise.
+        for room in 0..=full.chars().count() {
+            for focus in [Focus::Body, Focus::Metadata] {
+                if let Some(line) = hints(focus, room) {
+                    assert!(line.chars().count() <= room, "{room}: {line}");
+                }
+            }
+        }
+        assert!(hints(Focus::Body, 3).is_none(), "no room, nothing shown");
     }
 
     #[test]

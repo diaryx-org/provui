@@ -24,7 +24,21 @@
 //! `^W`, taken before either widget sees the event: unbound in leaf's Ctrl
 //! table, not a bare letter for flower to navigate on, and `^W` is the window
 //! key in every editor that has windows.
+//!
+//! ## Following links
+//!
+//! A prov document's frontmatter is not only values: some of its keys are
+//! *links*, and a workspace is what makes them resolvable. [`FOLLOW_CHORD`]
+//! opens the document the metadata cursor is standing on and [`BACK_CHORD`]
+//! returns, which makes this a two-key browser over the spanning tree. Both are
+//! taken before the widgets for the reason `^W` is, and both are free in leaf's
+//! Ctrl table — `^G` for *go*, `^O` for the jump-back every vi has.
+//!
+//! Everything about *what* a link is belongs to `provui-core`; everything about
+//! what this host does with the answer belongs to [`nav`]. See that module for
+//! the arrangement policy — which keys decline edits, and which rows sink.
 
+mod nav;
 mod ui;
 
 use std::io::stdout;
@@ -45,6 +59,14 @@ use ratatui::layout::Rect;
 /// How the focus-switch chord is written for a reader. See the module docs for
 /// why it is this one.
 pub const FOCUS_CHORD: &str = "^W";
+
+/// Open the document the metadata cursor's link points at. Free in leaf's Ctrl
+/// table, and *go* is what it does.
+pub const FOLLOW_CHORD: &str = "^G";
+
+/// Back to the document the last follow came from — vi's jump-back chord, and
+/// likewise free in leaf's table.
+pub const BACK_CHORD: &str = "^O";
 
 /// Which pane has the keyboard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,18 +109,16 @@ pub struct App {
     quit_armed: bool,
     /// The file name, for the two headers and the status line.
     pub name: String,
+    /// The workspace, the way back, and this host's arrangement policy.
+    pub nav: nav::Nav,
     /// Where the panes landed on the last frame, so a click can be routed to the
     /// one it was in. `None` before the first draw.
     pub panes: Option<ui::Panes>,
 }
 
 impl App {
-    fn new(session: &DocumentSession) -> Self {
-        let name = session
-            .path()
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| session.path().display().to_string());
+    fn new(session: &DocumentSession, nav: nav::Nav) -> Self {
+        let status = nav.note();
         Self {
             // The prose is the document; the metadata is what is true about it.
             // A document with no prose region has nowhere else to put the
@@ -109,12 +129,21 @@ impl App {
                 Focus::Metadata
             },
             editor: EditorState::new(),
-            status: None,
+            // Only a complaint — prov refusing to guess a root. An absent
+            // workspace is the ordinary case and is drawn, not announced.
+            status,
             quit_armed: false,
-            name,
+            name: file_name(session.path()),
+            nav,
             panes: None,
         }
     }
+}
+
+fn file_name(path: &std::path::Path) -> String {
+    path.file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| path.display().to_string())
 }
 
 /// Whether the loop keeps going.
@@ -138,6 +167,8 @@ usage: provui <file>
 keys:
     ^W              switch panes
     ^S              save the document (both regions, from either pane)
+    ^G              follow the link under the metadata cursor
+    ^O              back to the document you followed from
     ^Q              quit
     body pane       leaf's keys — see `leaf --help`
     metadata pane   j/k move · l/h in/out · e edit · x delete
@@ -167,9 +198,15 @@ fn main() -> Result<()> {
         anyhow::bail!("no file given");
     };
 
-    let mut session =
-        DocumentSession::open(&path).with_context(|| format!("opening {}", path.display()))?;
-    let mut app = App::new(&session);
+    // Discovery first: the workspace is what supplies the schema a document is
+    // opened under, so it has to be known before the document is opened rather
+    // than bolted on afterwards.
+    let nav = nav::Nav::discover(&path);
+    let mut session = nav
+        .open(&path)
+        .map_err(|e| anyhow::anyhow!("{e}"))
+        .with_context(|| format!("opening {}", path.display()))?;
+    let mut app = App::new(&session, nav);
 
     let mut terminal = ratatui::init();
     // Mouse capture routes clicks to the pane they landed in and gives leaf its
@@ -220,7 +257,7 @@ fn run(terminal: &mut DefaultTerminal, session: &mut DocumentSession, app: &mut 
             // releases, and a release that inserts a character types everything
             // twice.
             Event::Key(key) if key.kind == KeyEventKind::Press => {
-                if on_key(session, app, key) == Flow::Quit {
+                if on_key(session, app, key, screen(terminal)?) == Flow::Quit {
                     return Ok(());
                 }
             }
@@ -241,19 +278,28 @@ fn fit_metadata(area: Rect, session: &mut DocumentSession, app: &App) {
 
 // ── input ────────────────────────────────────────────────────────────────────
 
-/// Is this the host's chord? Taken before either widget sees the event — see
-/// the module docs for why that is the only way it can work.
-fn is_focus_chord(key: KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('w' | 'W'))
+/// Is this one of the host's chords? Taken before either widget sees the event —
+/// see the module docs for why that is the only way it can work.
+fn is_chord(key: KeyEvent, letter: char) -> bool {
+    key.modifiers.contains(KeyModifiers::CONTROL)
+        && matches!(key.code, KeyCode::Char(c) if c.eq_ignore_ascii_case(&letter))
 }
 
-fn on_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent) -> Flow {
+fn on_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent, screen: Rect) -> Flow {
     // A refusal is only ever an answer to the key that provoked it.
     let quit_armed = std::mem::take(&mut app.quit_armed);
     app.status = None;
 
-    if is_focus_chord(key) {
+    if is_chord(key, 'w') {
         switch_focus(session, app);
+        return Flow::Continue;
+    }
+    if is_chord(key, 'g') {
+        follow(session, app, screen);
+        return Flow::Continue;
+    }
+    if is_chord(key, 'o') {
+        go_back(session, app, screen);
         return Flow::Continue;
     }
 
@@ -310,6 +356,103 @@ fn save(session: &mut DocumentSession, app: &mut App) {
         Ok(()) => app.status = Some(format!("saved {}", app.name)),
         Err(e) => app.status = Some(format!("save failed: {e}")),
     }
+}
+
+/// Open the document the metadata cursor's link points at.
+///
+/// The cursor is the metadata pane's, so this only means anything there — from
+/// the body pane there is no row to be standing on, and saying so beats
+/// following whatever the metadata pane happened to be left on.
+fn follow(session: &mut DocumentSession, app: &mut App, screen: Rect) {
+    if app.focus != Focus::Metadata {
+        app.status = Some(format!(
+            "following is the metadata pane's ({FOCUS_CHORD} to switch)"
+        ));
+        return;
+    }
+    let landing = match app.nav.follow(session) {
+        nav::Follow::NoCursor => {
+            app.status = Some("nothing under the cursor".into());
+            return;
+        }
+        nav::Follow::NotALink => {
+            app.status = Some("not a link — stand on a relation's target".into());
+            return;
+        }
+        nav::Follow::Lands(_, landing) => landing,
+    };
+    // A link that does not land on a file on disk is not a failure to report as
+    // one: an external URL, a place inside this document and a broken target are
+    // all real answers, and the destination knows how to say which it is.
+    let Some(target) = landing.openable().map(std::path::Path::to_path_buf) else {
+        app.status = Some(landing.describe());
+        return;
+    };
+    if !leaving_is_allowed(session, app) {
+        return;
+    }
+    let from = session.path().to_path_buf();
+    match app.nav.go(&from, &target) {
+        Ok(arrived) => {
+            *session = arrived;
+            arrive(session, app, screen);
+        }
+        Err(e) => app.status = Some(format!("opening {}: {e}", target.display())),
+    }
+}
+
+/// Back to the document the last follow came from.
+fn go_back(session: &mut DocumentSession, app: &mut App, screen: Rect) {
+    let Some(result) = app.nav.back() else {
+        app.status = Some("nothing to go back to".into());
+        return;
+    };
+    if !leaving_is_allowed(session, app) {
+        return;
+    }
+    match result {
+        Ok(arrived) => {
+            *session = arrived;
+            arrive(session, app, screen);
+        }
+        Err(e) => app.status = Some(format!("going back: {e}")),
+    }
+}
+
+/// Whether this host will leave the document it is standing in.
+///
+/// It will not, while there are unsaved changes. Unlike quitting there is no
+/// second-press escape hatch, and deliberately: quitting twice discards work you
+/// were told about and meant to discard, whereas following a link is a *reading*
+/// gesture, and losing an edit to it would be losing it to something nobody
+/// thinks of as destructive.
+fn leaving_is_allowed(session: &DocumentSession, app: &mut App) -> bool {
+    if matches!(session.metadata().mode, Mode::Editing { .. }) {
+        app.status = Some("finish the metadata edit first — Enter commits, Esc cancels".into());
+        return false;
+    }
+    if session.dirty() {
+        app.status = Some("unsaved changes — ^S to save before leaving".into());
+        return false;
+    }
+    true
+}
+
+/// Take on a document that has just replaced the one being edited.
+fn arrive(session: &mut DocumentSession, app: &mut App, screen: Rect) {
+    app.name = file_name(session.path());
+    // The prose is the document; one with no prose region has nowhere else to
+    // put the keyboard.
+    app.focus = if session.has_body() {
+        Focus::Body
+    } else {
+        Focus::Metadata
+    };
+    app.quit_armed = false;
+    // The same preparation the first document got: a fresh model is in the row
+    // projection, not the page one, and has not skipped its lone drill row.
+    begin(session, app, screen);
+    app.status = Some(format!("{} · {BACK_CHORD} back", app.name));
 }
 
 fn quit(session: &DocumentSession, app: &mut App, armed: bool) -> Flow {
@@ -404,6 +547,21 @@ mod tests {
     use ratatui::Terminal;
     use ratatui::backend::TestBackend;
 
+    /// The 80×24 terminal every test in here drives.
+    const SCREEN: Rect = Rect {
+        x: 0,
+        y: 0,
+        width: 80,
+        height: 24,
+    };
+
+    /// [`super::on_key`] with this file's one terminal size filled in — the
+    /// argument only the navigation verbs use, and only to lay out the document
+    /// they arrive at.
+    fn on_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent) -> Flow {
+        super::on_key(session, app, key, SCREEN)
+    }
+
     const DOC: &str = "\
 ---
 # a comment nobody should lose
@@ -426,9 +584,13 @@ Original body.
     /// starts one.
     fn open(name: &str) -> (PathBuf, DocumentSession, App) {
         let path = scratch(name);
-        let mut session = DocumentSession::open(&path).unwrap();
-        let app = App::new(&session);
-        begin(&mut session, &app, Rect::new(0, 0, 80, 24));
+        // `Nav::none`, not `Nav::discover`: what these tests are about is this
+        // host, and discovery walks the real filesystem to the root, so what it
+        // finds is a property of the machine running them.
+        let nav = nav::Nav::none();
+        let mut session = nav.open(&path).unwrap();
+        let app = App::new(&session, nav);
+        begin(&mut session, &app, SCREEN);
         (path, session, app)
     }
 
@@ -541,6 +703,127 @@ Original body.
         let _ = std::fs::remove_file(&path);
     }
 
+    /// A two-document vault, for the tests that move between them. `Nav::none`
+    /// is still what drives them: `part_of` here is a *relative* target, which
+    /// resolves lexically, so what these assert is this host's verbs rather than
+    /// prov's discovery.
+    fn vault(name: &str) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("provui_tui_{name}"));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let root = dir.join("README.md");
+        let note = dir.join("note.md");
+        std::fs::write(&root, "---\ntitle: The Vault\n---\n# The Vault\n").unwrap();
+        std::fs::write(
+            &note,
+            "---\ntitle: A Note\npart_of: '[The Vault](README.md)'\nmood: rainy\n---\n# A Note\n\nProse.\n",
+        )
+        .unwrap();
+        (dir, note)
+    }
+
+    /// Stand on a metadata row the way the widget's own keys would leave the
+    /// cursor, then take the host's chord.
+    fn stand_on(session: &mut DocumentSession, app: &mut App, key: &str) {
+        if app.focus != Focus::Metadata {
+            on_key(session, app, ctrl('w'));
+        }
+        session.metadata_mut().focus_on(&[Seg::Key(key.into())]);
+    }
+
+    /// The whole navigation gesture, driven headlessly: stand on a link, follow
+    /// it, and come back to where you were.
+    #[test]
+    fn follows_the_link_under_the_metadata_cursor_and_comes_back() {
+        let (dir, note) = vault("follow");
+        let nav = nav::Nav::none();
+        let mut session = nav.open(&note).unwrap();
+        let mut app = App::new(&session, nav);
+        begin(&mut session, &app, SCREEN);
+
+        stand_on(&mut session, &mut app, "part_of");
+        on_key(&mut session, &mut app, ctrl('g'));
+        assert!(session.path().ends_with("README.md"), "followed the link");
+        assert_eq!(app.name, "README.md", "and the host caught up");
+        assert_eq!(app.nav.depth(), 1);
+
+        on_key(&mut session, &mut app, ctrl('o'));
+        assert!(session.path().ends_with("note.md"), "and back again");
+        assert_eq!(app.nav.depth(), 0);
+
+        // A back with nothing behind it says so rather than doing nothing.
+        on_key(&mut session, &mut app, ctrl('o'));
+        assert_eq!(app.status.as_deref(), Some("nothing to go back to"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Following is a *reading* gesture, so unlike quitting it has no
+    /// second-press escape hatch: an edit is never lost to one.
+    #[test]
+    fn following_is_refused_while_there_are_unsaved_changes() {
+        let (dir, note) = vault("dirty");
+        let nav = nav::Nav::none();
+        let mut session = nav.open(&note).unwrap();
+        let mut app = App::new(&session, nav);
+        begin(&mut session, &app, SCREEN);
+
+        typed(&mut session, &mut app, "Edited: ");
+        assert!(session.dirty());
+
+        stand_on(&mut session, &mut app, "part_of");
+        on_key(&mut session, &mut app, ctrl('g'));
+        assert!(session.path().ends_with("note.md"), "stayed put");
+        assert!(
+            app.status.as_deref().is_some_and(|s| s.contains("unsaved")),
+            "and said why: {:?}",
+            app.status
+        );
+
+        // Twice, deliberately: quitting arms on the first press and goes on the
+        // second, and this must not.
+        on_key(&mut session, &mut app, ctrl('g'));
+        assert!(session.path().ends_with("note.md"), "still put");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The two answers that are not a document: a row that is not a link, and
+    /// the chord taken from the pane that has no cursor to take it from.
+    #[test]
+    fn a_follow_that_opens_nothing_says_what_it_found_instead() {
+        let (dir, note) = vault("nothing");
+        let nav = nav::Nav::none();
+        let mut session = nav.open(&note).unwrap();
+        let mut app = App::new(&session, nav);
+        begin(&mut session, &app, SCREEN);
+
+        // From the body there is no metadata cursor to be standing on, and
+        // following whatever the other pane was left on would be a guess.
+        assert_eq!(app.focus, Focus::Body);
+        on_key(&mut session, &mut app, ctrl('g'));
+        assert!(
+            app.status
+                .as_deref()
+                .is_some_and(|s| s.contains("metadata")),
+            "{:?}",
+            app.status
+        );
+
+        stand_on(&mut session, &mut app, "mood");
+        on_key(&mut session, &mut app, ctrl('g'));
+        assert!(
+            app.status
+                .as_deref()
+                .is_some_and(|s| s.contains("not a link")),
+            "{:?}",
+            app.status
+        );
+        assert!(session.path().ends_with("note.md"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn quit_is_refused_once_while_the_document_is_unsaved() {
         let (path, mut session, mut app) = open("provui_tui_quit.md");
@@ -641,12 +924,30 @@ Original body.
         assert!(rendered.contains("○ saved"), "the state");
         assert!(rendered.contains("focus: body"), "the focus");
         assert!(rendered.contains(FOCUS_CHORD), "the chord");
-        assert!(rendered.contains("^Q quit"), "clipped off the right edge");
+        assert!(
+            rendered.contains("^Q quit"),
+            "the way out survives the trim"
+        );
 
         // And both pane labels are there, each carrying the focus marker that is
         // the only cue flower's own header bar leaves room for.
         assert!(rendered.contains("▶ leaf — body"), "focused body label");
         assert!(rendered.contains("flower —"), "flower's own header");
+
+        // The metadata pane's hint set is the longer of the two — it carries the
+        // follow chord as well — so it is the one that decides what the trim
+        // gives up at 80 columns. What it must never give up is the way out.
+        app.focus = Focus::Metadata;
+        terminal
+            .draw(|f| ui::draw(f, &mut app, &mut session))
+            .unwrap();
+        let rendered = format!("{}", terminal.backend());
+        assert!(rendered.contains("focus: metadata"), "the focus");
+        assert!(rendered.contains(FOLLOW_CHORD), "the follow chord");
+        assert!(
+            rendered.contains("^Q quit"),
+            "the way out survives the trim"
+        );
 
         let _ = std::fs::remove_file(&path);
     }

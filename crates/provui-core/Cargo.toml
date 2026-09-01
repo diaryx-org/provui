@@ -6,7 +6,7 @@ rust-version.workspace = true
 repository.workspace = true
 readme.workspace = true
 license.workspace = true
-description = "A frontend-neutral UI composition core over prov: a prov-aware structural metadata editor (flower over prov), a document session composing flower metadata and leaf body over one prov document, and the prov-config → flower-schema adapters."
+description = "A frontend-neutral UI composition core over prov: a prov-aware structural metadata editor (flower over prov), a document session composing flower metadata and leaf body over one prov document, the prov-config → flower-schema adapters, and the frontmatter classification and link resolution a prov-aware editor navigates by."
 keywords = ["prov", "editor", "metadata", "frontmatter", "schema"]
 categories = ["text-editors", "config"]
 
