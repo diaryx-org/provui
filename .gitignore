@@ -1,0 +1,4 @@
+/target
+.env*
+# Nix build symlink
+/result

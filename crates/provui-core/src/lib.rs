@@ -1,0 +1,376 @@
+//! provui-core — a frontend-neutral UI composition core over
+//! [`prov`](https://docs.rs/prov).
+//!
+//! prov describes a plaintext workspace; [`flower`](https://docs.rs/flower-core)
+//! edits structured metadata; [`leaf`](https://docs.rs/leaf-core) edits prose.
+//! This crate is the composition of the three, with no opinion about what draws
+//! it — the same core is meant to sit under a TUI, a SwiftUI app behind UniFFI,
+//! or a test harness:
+//!
+//! - [`ProvBackend`] — a [`flower_core::Backend`] that edits a prov document's
+//!   embedded metadata through prov's carrier-aware
+//!   [`MetaEditor`](prov::edit::MetaEditor). Lossless: comments, key order, the
+//!   carrier/format, and the prose body are all preserved. Unlike
+//!   [`flower_core::FigBackend`] (a standalone config file, schema-free), a
+//!   `ProvBackend` can carry the workspace **schema** — the controlled
+//!   vocabularies and relations resolved from the prov config — so a frontend
+//!   renders term pickers, spanning-link widgets, and type-directed edits.
+//! - [`DocumentSession`] — one open prov document edited through a flower metadata
+//!   model *and* a leaf body editor, reconciled on save.
+//! - [`schema_from_config`] — the adapter turning a resolved prov
+//!   [`WorkspaceConfig`](prov::config::WorkspaceConfig) (+ its vocabularies) into a
+//!   generic [`flower_core::Schema`] for the workspace's **content** documents.
+//!   This is where prov's controlled vocabularies and spanning relation reach the
+//!   UI.
+//! - [`config_schema`] — the same trick turned on the config document itself, so
+//!   the metadata editor a frontend already ships can edit a workspace's policy
+//!   instead of a hand-written settings form.
+//!
+//! Scope: the single-document metadata surface (prov's `edit` layer). Relation
+//! fields that maintain inverse links *across* documents belong to prov's `mutate`
+//! layer — a later, relationship-aware backend, not this one.
+
+pub mod config_schema;
+pub mod rules;
+pub mod schema;
+mod session;
+
+pub use config_schema::{CONFIG_READONLY_KEYS, config_schema};
+pub use schema::schema_from_config;
+pub use session::{DocumentSession, SessionError};
+
+use fig::Value;
+use flower_core::tree::{self, to_fig};
+use flower_core::{Backend, BackendError, EditOp, Schema, Seg};
+use prov::edit::MetaEditor;
+use prov::{Document, MetaCarrier};
+
+fn be(e: impl std::fmt::Display) -> BackendError {
+    BackendError(e.to_string())
+}
+
+/// A backend over a single prov document, editing its embedded metadata.
+pub struct ProvBackend {
+    /// The document path — drives carrier/format detection (extension for a
+    /// whole-file config doc, content sniffing for a fenced block).
+    path: std::path::PathBuf,
+    /// The current full document text (frontmatter + body); the source of truth.
+    text: String,
+    /// The schema governing this document, when the embedder resolved one from the
+    /// workspace config (see [`schema_from_config`]). Returned via
+    /// [`Backend::schema`] so the flower model validates values and a frontend can
+    /// pick schema-driven widgets. `None` for a bare document with no workspace.
+    schema: Option<Schema>,
+}
+
+impl ProvBackend {
+    /// Open a prov document from its full `text`, with no schema. Errors if prov
+    /// cannot parse it.
+    pub fn open(
+        path: impl Into<std::path::PathBuf>,
+        text: impl Into<String>,
+    ) -> Result<Self, BackendError> {
+        Self::open_with_schema_opt(path, text, None)
+    }
+
+    /// Open a prov document carrying the workspace `schema` — the prov-aware path,
+    /// so the flower model validates controlled fields and offers pickers.
+    pub fn open_with_schema(
+        path: impl Into<std::path::PathBuf>,
+        text: impl Into<String>,
+        schema: Schema,
+    ) -> Result<Self, BackendError> {
+        Self::open_with_schema_opt(path, text, Some(schema))
+    }
+
+    fn open_with_schema_opt(
+        path: impl Into<std::path::PathBuf>,
+        text: impl Into<String>,
+        schema: Option<Schema>,
+    ) -> Result<Self, BackendError> {
+        let path = path.into();
+        let text = text.into();
+        // Fail fast if the document doesn't parse.
+        Document::parse(&path, &text).map_err(be)?;
+        Ok(Self { path, text, schema })
+    }
+
+    fn document(&self) -> Result<Document, BackendError> {
+        Document::parse(&self.path, &self.text).map_err(be)
+    }
+
+    /// The prose body outside the metadata block — the region a `leaf` editor
+    /// would own. Empty for a whole-file config document.
+    pub fn body(&self) -> Result<String, BackendError> {
+        Ok(self.document()?.body)
+    }
+
+    /// Whether the document has an editable prose body (a fenced carrier). A
+    /// whole-file config document has none — its body cannot be replaced.
+    pub fn has_body(&self) -> Result<bool, BackendError> {
+        Ok(matches!(
+            self.document()?.carrier,
+            Some(MetaCarrier::Fenced(_))
+        ))
+    }
+
+    /// Replace the prose body, leaving the metadata block untouched — the write
+    /// path for edits a `leaf` editor makes to [`body`](Self::body).
+    ///
+    /// Uses fig's `Embed::replace_body` (the same lossless primitive prov edits
+    /// through). A frontend that wants fixity/`updated` restamping routes this
+    /// through prov's write path instead; here it demonstrates that the metadata
+    /// and body regions edit independently over one document.
+    pub fn set_body(&mut self, body: &str) -> Result<(), BackendError> {
+        match self.document()?.carrier {
+            Some(MetaCarrier::Fenced(kind)) => {
+                let mut embed = fig::Embed::open(self.text.as_bytes(), kind).map_err(be)?;
+                embed.replace_body(body).map_err(be)?;
+                self.text = embed.render().map_err(be)?.to_string();
+                Ok(())
+            }
+            _ => Err(BackendError(
+                "document has no fenced body to replace".into(),
+            )),
+        }
+    }
+}
+
+impl Backend for ProvBackend {
+    fn apply(&mut self, op: EditOp) -> Result<(), BackendError> {
+        let carrier = self.document()?.carrier;
+        // `open_or_init` so an edit to a document with no block synthesizes one
+        // (frontmatter for a prose file) rather than failing.
+        let mut editor = MetaEditor::open_or_init(&self.text, carrier).map_err(be)?;
+
+        match op {
+            EditOp::ReplaceValue { path, value } => {
+                let segs = to_fig(&path);
+                // Mirror prov's `set_in_text`: an index-terminated path is a pure
+                // replacement (there is no "insert at absent index"); a
+                // key-terminated path upserts.
+                match path.last() {
+                    Some(Seg::Index(_)) => editor.replace_value(&segs, value).map_err(be)?,
+                    _ => editor.set_value(&segs, value).map_err(be)?,
+                }
+            }
+            EditOp::DeleteKey { path } => editor.delete(&to_fig(&path)).map_err(be)?,
+            EditOp::RemoveItem { seq_path, index } => {
+                editor.remove_item(&to_fig(&seq_path), index).map_err(be)?
+            }
+            // prov's MetaEditor has no distinct "insert": `set_value` at the new
+            // key path upserts, which is exactly an insert for an absent key.
+            EditOp::InsertKey {
+                map_path,
+                key,
+                value,
+            } => {
+                let mut path = map_path;
+                path.push(Seg::Key(key));
+                editor.set_value(&to_fig(&path), value).map_err(be)?
+            }
+            EditOp::AppendItem { seq_path, value } => {
+                editor.append_value(&to_fig(&seq_path), value).map_err(be)?
+            }
+            // No `move_item` on MetaEditor; express the move as a full index
+            // permutation through `reorder_items`, sized from the current sequence.
+            // The index arithmetic is flower's, so a move here means what a move
+            // means through any other backend.
+            EditOp::MoveItem { seq_path, from, to } => {
+                let len = tree::seq_len(&self.to_value()?, &seq_path)
+                    .ok_or_else(|| BackendError("target is not a sequence".into()))?;
+                if let Some(order) = flower_core::backend::move_permutation(len, from, to) {
+                    editor
+                        .reorder_items(&to_fig(&seq_path), &order)
+                        .map_err(be)?;
+                }
+            }
+            EditOp::ReorderKeys { map_path, keys } => {
+                editor.reorder_keys(&to_fig(&map_path), &keys).map_err(be)?
+            }
+            EditOp::RenameKey { path, new_key } => {
+                editor.replace_key(&to_fig(&path), &new_key).map_err(be)?
+            }
+        }
+
+        self.text = editor.render().map_err(be)?;
+        Ok(())
+    }
+
+    fn to_value(&self) -> Result<Value, BackendError> {
+        // prov's metadata tree → fig's value tree (the serde-free bridge).
+        Ok(Value::from(&self.document()?.meta))
+    }
+
+    fn source(&self) -> Result<String, BackendError> {
+        Ok(self.text.clone())
+    }
+
+    fn schema(&self) -> Option<Schema> {
+        self.schema.clone()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use flower_core::{Mode, Model};
+
+    const DOC: &str = "\
+---
+# the title
+title: Old Title
+draft: true
+tags:
+- a
+- b
+---
+# Heading
+
+Body prose that must survive metadata edits.
+";
+
+    fn model() -> Model<ProvBackend> {
+        let backend = ProvBackend::open("note.md", DOC).expect("open prov doc");
+        Model::new(backend).expect("build model")
+    }
+
+    fn select(model: &mut Model<ProvBackend>, path: &[Seg]) {
+        // `select_row`, not a write to `selected`: the field is flower's own now,
+        // and the setter is what asserts the tree projection this index belongs to.
+        let index = model
+            .rows
+            .iter()
+            .position(|r| r.path == path)
+            .unwrap_or_else(|| panic!("no row for {path:?}"));
+        model.select_row(index);
+    }
+
+    fn type_value(model: &mut Model<ProvBackend>, text: &str) {
+        // `..`: an edit now also carries the path it belongs to, which this
+        // helper has no use for — it types into whatever is already open.
+        if let Mode::Editing { buffer, .. } = &mut model.mode {
+            buffer.clear();
+        }
+        for c in text.chars() {
+            model.edit_push(c);
+        }
+        model.edit_commit();
+    }
+
+    /// The `EditOp` contract, checked against flower's own suite.
+    ///
+    /// `ProvBackend` is the second implementation of that trait, and a trait with
+    /// one implementation has only a behavior — this is where the two would
+    /// silently part ways. Running flower's suite rather than restating it means a
+    /// guarantee added upstream arrives here as a failing test, not as a difference
+    /// nobody looked for.
+    ///
+    /// The fixture is written as frontmatter because that is the carrier a prose
+    /// vault uses; the suite asserts on the value tree, so the format is ours to
+    /// pick.
+    #[test]
+    fn prov_backend_satisfies_the_edit_op_contract() {
+        const FIXTURE: &str = "\
+---
+title: note
+tags:
+- alpha
+- beta
+- gamma
+nested:
+  k: v
+  j: w
+---
+# Note
+
+Body prose.
+";
+        flower_core::backend::conformance::check(|| {
+            ProvBackend::open("note.md", FIXTURE).expect("open fixture")
+        })
+        .expect("prov backend honors the EditOp contract");
+    }
+
+    #[test]
+    fn renders_frontmatter_as_a_tree() {
+        let model = model();
+        let keys: Vec<&str> = model
+            .rows
+            .iter()
+            .filter(|r| r.depth == 0)
+            .map(|r| r.label.as_str())
+            .collect();
+        assert_eq!(
+            keys,
+            ["title", "draft", "tags"],
+            "top-level frontmatter keys"
+        );
+    }
+
+    #[test]
+    fn edits_metadata_leaving_the_body_untouched() {
+        let mut model = model();
+
+        select(&mut model, &[Seg::Key("title".into())]);
+        model.begin_edit();
+        type_value(&mut model, "New Title");
+
+        let out = model.source_snapshot();
+        assert!(out.contains("title: New Title"), "value changed:\n{out}");
+        assert!(out.contains("# the title"), "comment preserved:\n{out}");
+        assert!(out.starts_with("---\n"), "fences intact:\n{out}");
+        assert!(
+            out.contains("Body prose that must survive metadata edits."),
+            "body preserved:\n{out}"
+        );
+    }
+
+    #[test]
+    fn deletes_a_key() {
+        let mut model = model();
+
+        select(&mut model, &[Seg::Key("draft".into())]);
+        model.delete_selected();
+
+        let out = model.source_snapshot();
+        assert!(!out.contains("draft:"), "key removed:\n{out}");
+        assert!(out.contains("title: Old Title"), "siblings kept:\n{out}");
+        assert!(out.contains("Body prose"), "body kept:\n{out}");
+    }
+
+    #[test]
+    fn schema_backed_backend_rejects_a_term_outside_a_closed_vocabulary() {
+        use flower_core::schema::{Constraint, FieldRule};
+        use flower_core::{FieldType, PathPat, Term};
+        // A prov document whose `audience` is a closed vocabulary.
+        let doc = "---\ntitle: Note\naudience:\n- public\n---\n# Note\n";
+        let schema = Schema::new(vec![
+            FieldRule::new(PathPat::each_item_of("audience"))
+                .ty(FieldType::Str)
+                .constraint(Constraint::Enum {
+                    values: vec![Term::value("public"), Term::value("private")],
+                    closed: true,
+                }),
+        ]);
+        let backend = ProvBackend::open_with_schema("note.md", doc, schema).expect("open");
+        let mut model = Model::new(backend).expect("model");
+
+        // The schema traveled through the backend into the model: an unknown
+        // term is rejected, the document untouched.
+        select(&mut model, &[Seg::Key("audience".into()), Seg::Index(0)]);
+        model.begin_edit();
+        type_value(&mut model, "familly");
+        assert!(
+            model.status.contains("rejected"),
+            "status: {}",
+            model.status
+        );
+        assert!(model.source_snapshot().contains("- public"), "unchanged");
+
+        // A known value commits.
+        model.begin_edit();
+        type_value(&mut model, "private");
+        assert!(model.source_snapshot().contains("- private"), "applied");
+    }
+}

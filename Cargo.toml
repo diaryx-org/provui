@@ -1,0 +1,34 @@
+[workspace]
+resolver = "3"
+# Listed rather than globbed, the way the rest of the family does it: the
+# frontends (a TUI over leaf-ratatui + flower-ratatui, a UniFFI facade later)
+# will be members too, and each one wants a line saying why it is here.
+members = ["crates/provui-core"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+# Edition 2024 needs 1.85; flower-core's floor is 1.88, and a dependency's floor
+# is this crate's floor.
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/diaryx-org/provui"
+readme = "README.md"
+
+[workspace.dependencies]
+# The self-describing plaintext workspace library. Defaults to `yaml` alone,
+# which is the carrier `---` frontmatter uses; a frontend that wants JSON/TOML
+# vaults turns those features on.
+prov = "0.10"
+# The Zig-backed config AST + lossless editor prov and flower are both built on.
+# Named directly because `ProvBackend` reaches for `fig::Embed::replace_body` and
+# `fig::Value`, which are the tree and the splice both halves agree on.
+fig = "3.1"
+# The generic structural metadata editor. `ProvBackend` is an implementation of
+# its `Backend` trait; nothing here is upstreamed into it, because flower-core
+# does not know the word "prov" and should not learn it.
+flower-core = "0.3.1"
+# The rich-text body editor over twig. `default-features = false` so a consumer
+# that also links `leaf-ffi` unifies on one leaf-core copy and one twig-sys
+# build rather than two.
+leaf-core = { version = "0.1", default-features = false }
