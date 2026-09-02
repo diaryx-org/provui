@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "provui-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "fig",
  "flower-core",
@@ -1010,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "provui-tui"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "flower-core",
