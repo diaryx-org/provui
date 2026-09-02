@@ -418,7 +418,9 @@ checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 
 [[package]]
 name = "flower-core"
-version = "0.3.2"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "121749a349092328d66e8dc1ba5f4803775b7f2cb107f7c80a5a06d3b961a497"
 dependencies = [
  "anyhow",
  "fig",
@@ -427,7 +429,9 @@ dependencies = [
 
 [[package]]
 name = "flower-ratatui"
-version = "0.3.2"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b994e6daf1c6874d302df39b7e359b53844965268db05be60f16f0d0343d426f"
 dependencies = [
  "flower-core",
  "ratatui",
@@ -662,6 +666,8 @@ dependencies = [
 [[package]]
 name = "leaf-core"
 version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "027ef115032a8ee77cf3c10878e6ca7495d9dc1a1bfc052784f6563bf951ead2"
 dependencies = [
  "anyhow",
  "twig-doc",
@@ -672,6 +678,8 @@ dependencies = [
 [[package]]
 name = "leaf-raster"
 version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5228e5d1a16c9b512da3bd04affda6de63622299a4c26e5179b6d99ab2f0dd1e"
 dependencies = [
  "cosmic-text",
  "image",
@@ -681,6 +689,8 @@ dependencies = [
 [[package]]
 name = "leaf-ratatui"
 version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d10f4e988cf4500af06c61969ef1c7e9b6ab53195c5ddc9a98bb3967aa1060d8"
 dependencies = [
  "leaf-core",
  "leaf-raster",
@@ -911,9 +921,9 @@ dependencies = [
 
 [[package]]
 name = "prov"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cae6743ee3dc315e905252c6be9e37993631a105c4b0979a3a2a780dabd05b80"
+checksum = "28d690f49107678d0d606c68725f3bba9528bf40e3cfda3e2f61332c62c9775c"
 dependencies = [
  "fig",
  "fig-schema",
@@ -930,9 +940,9 @@ dependencies = [
 
 [[package]]
 name = "prov-config"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b868c1086f8aa82a86c27fff942223ed2da2c8919730280f1d06a26bd494087e"
+checksum = "08efd1b567baa057aa00845d2e7cf8f91f20bb14717496a9c704afd5e7b78dc6"
 dependencies = [
  "fig",
  "fig-schema",
@@ -945,9 +955,9 @@ dependencies = [
 
 [[package]]
 name = "prov-exports"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31d289043e7eb246f57f73054d3a5e87069ff16f62306f9f408f546ef1701181"
+checksum = "3eb84b97cf4b99bdd708688157c6e1165776108d1d6d02788ff3851d1ee50f05"
 dependencies = [
  "prov-graph",
  "prov-views",
@@ -955,9 +965,9 @@ dependencies = [
 
 [[package]]
 name = "prov-graph"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c3f00e8c977f4c569719a1f7097b569daed8c3a0f6f2264b0c62739d7f7b6802"
+checksum = "7669458099a5a6782641d69e92f4c1877503bc1b76c2858867dd1fb4e439ef8e"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -970,9 +980,9 @@ dependencies = [
 
 [[package]]
 name = "prov-store"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08b82c87a012ac65ca6bdc0576c3b85c87249f9118f2cfce0642be4b89919be8"
+checksum = "d1c82506eb747c04af2dc381ff69500f9aefb669377fed4825b94ac84cc08cc6"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -981,9 +991,9 @@ dependencies = [
 
 [[package]]
 name = "prov-views"
-version = "0.10.0"
+version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5be4eba3743e2ceed86b79b32530f8ed6aaac63ce439590310dd41e33f0da92"
+checksum = "001e4190311ecda62865982ba215e544d433fe97bdc724268d0a881990819452"
 dependencies = [
  "prov-graph",
 ]
