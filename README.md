@@ -45,7 +45,7 @@ handling and nothing else.
 - **`config_schema`** — the same trick turned on the config document itself. A
   prov config is a document, and flower can already render, type-direct and
   validate any prov document; the only thing missing was a schema saying that
-  `fixity` is one of three words. With it, `id_storage` becomes a picker instead
+  `fixity` is one of two words. With it, `id_storage` becomes a picker instead
   of free text, and a typo like `fixity: alll` — which prov silently ignores,
   keeping the default — stops being reachable.
 - **`facets`** — what each frontmatter key *is* to prov: a relation, a one-way

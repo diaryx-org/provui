@@ -10,7 +10,7 @@
 //!
 //! That is the whole point: `prov.yaml` is a document. flower can already
 //! render, type-direct and validate any prov document; the only thing missing
-//! was a schema saying that `fixity` is one of three words and `fields.<name>`
+//! was a schema saying that `fixity` is one of two words and `fields.<name>`
 //! is a field declaration. With it, an "add a field" menu becomes possible,
 //! `id_storage` becomes a picker instead of free text, and a typo like `fixity:
 //! alll` — which prov silently ignores, keeping the default — stops being
@@ -312,17 +312,20 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
         path(&["fixity"]),
         "Content checksums",
         Icon::Lock,
-        &[
-            ("off", "No checksums"),
-            ("attachments", "Attachments only"),
-            ("all", "Every document body"),
-        ],
+        // Two answers, not three. It was a coverage tier (`attachments`/`all`)
+        // until prov 0.11; what a checksum covers is now read off each
+        // document's shape — an attachment's payload and a separated body get
+        // one, a combined body never does — so the only question left is
+        // whether to write them.
+        &[("off", "No checksums"), ("on", "Checksums on")],
     ));
     rules.push(costly_when(
-        toggle(path(&["recycle_bin"]), "Recoverable delete (recycle bin)"),
+        toggle(path(&["record_deletions"]), "Record deletions"),
         false,
         Severity::ConfirmExplicitly,
-        "Deleting stops being recoverable. Anything deleted afterwards is gone.",
+        "Deleting stops being undoable. The file goes either way — this is what \
+         writes down that it existed, and without a record nothing can put a \
+         deleted page back, even where a snapshot still holds it.",
     ));
     // A picker rather than a toggle, for `about` and the pickers above alike:
     // they spell their states as words in the config, and prov may add a third
@@ -524,7 +527,7 @@ mod costly_tests {
         let schema = schema();
         let cases: &[(&str, Value, Value)] = &[
             // (field, the costly answer, a safe one)
-            ("recycle_bin", Value::Bool(false), Value::Bool(true)),
+            ("record_deletions", Value::Bool(false), Value::Bool(true)),
             (
                 "identity",
                 Value::Str("none".into()),
@@ -546,8 +549,8 @@ mod costly_tests {
         }
     }
 
-    /// Deleting the recycle bin is the one change nothing can undo afterwards,
-    /// and the only one asking for the strongest gesture.
+    /// Turning off the deletion record is the one change nothing can undo
+    /// afterwards, and the only one asking for the strongest gesture.
     #[test]
     fn only_the_unrecoverable_change_asks_for_a_deliberate_yes() {
         let schema = schema();
@@ -557,7 +560,7 @@ mod costly_tests {
                 .and_then(|r| r.severity_of(&value))
         };
         assert_eq!(
-            strongest("recycle_bin", Value::Bool(false)),
+            strongest("record_deletions", Value::Bool(false)),
             Some(Severity::ConfirmExplicitly)
         );
         assert_eq!(
@@ -786,10 +789,10 @@ mod tests {
     #[test]
     fn policy_axes_are_typed() {
         let schema = config_schema(&config_with(&[]));
-        let recycle = schema
-            .rule_for(&[Seg::Key("recycle_bin".into())])
-            .expect("recycle_bin should be governed");
-        assert_eq!(recycle.ty, Some(FieldType::Bool));
+        let deletions = schema
+            .rule_for(&[Seg::Key("record_deletions".into())])
+            .expect("record_deletions should be governed");
+        assert_eq!(deletions.ty, Some(FieldType::Bool));
 
         let fixity = schema
             .rule_for(&[Seg::Key("fixity".into())])
@@ -798,7 +801,8 @@ mod tests {
         assert!(closed, "an unparseable fixity silently keeps the default");
         assert_eq!(
             terms.iter().map(|t| t.value.as_str()).collect::<Vec<_>>(),
-            ["off", "attachments", "all"]
+            ["off", "on"],
+            "two answers since prov 0.11 — coverage follows the document's shape"
         );
     }
 

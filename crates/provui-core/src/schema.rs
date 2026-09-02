@@ -429,7 +429,7 @@ mod tests {
             .expect("prov.fixity");
         let (terms, closed) = inline.enum_constraint().expect("a picker, not a text box");
         assert!(closed);
-        assert!(terms.iter().any(|t| t.value == "attachments"));
+        assert!(terms.iter().any(|t| t.value == "on"));
 
         // The same key at top level is the config *document*'s, and is not
         // governed here — a content document has no bare `fixity`.
