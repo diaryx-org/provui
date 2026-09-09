@@ -38,27 +38,26 @@ flower-core = "0.4.0"
 # The rich-text body editor over twig. `default-features = false` so a consumer
 # that also links `leaf-ffi` unifies on one leaf-core copy and one twig-sys
 # build rather than two.
-leaf-core = { version = "0.1.4", default-features = false }
+leaf-core = { version = "0.1.8", default-features = false }
 
-# The two terminal widgets, which `provui-tui` embeds. Neither is on crates.io
-# yet, so both are consumed the prepublication way: by the version their repo
-# declares, resolved through the `[patch.crates-io]` in `~/diaryx/.cargo/
-# config.toml` (see `~/diaryx/.cargo/patches.toml`). No path across a repository
-# boundary appears in this file, so nothing here has to be undone to publish.
+# The two terminal widgets, which `provui-tui` embeds. Both are on crates.io and
+# are consumed from it, like everything else here; to build against a checkout
+# instead, turn on the `[patch.crates-io]` in `~/diaryx/.cargo/config.toml`
+# (see `~/diaryx/.cargo/patches.toml`). No path across a repository boundary
+# appears in this file, so nothing here has to be undone to publish.
 #
-# The two core requirements above are pinned to a patch level for a related
-# reason: each widget path-depends on its own core, and a requirement loose
-# enough to admit an older registry copy lets the lockfile keep one — at which
-# point the patch quietly goes unused and the graph holds two `Model`s and two
-# `Doc`s that are not the same type. (`cargo update -p <crate>` is what forces
-# re-resolution after turning a patch on; `cargo tree -i leaf-core` is what
-# proves it took.)
+# Each widget is pinned to the same patch level as its core, and the cores are
+# pinned to a patch level at all, for one reason: each widget path-depends on
+# its own core inside its own workspace, and a requirement loose enough to admit
+# an older registry copy lets the lockfile keep one alongside a patched
+# checkout — at which point the graph holds two `Model`s and two `Doc`s that are
+# not the same type. (`cargo update -p <crate>` is what forces re-resolution
+# after turning a patch on; `cargo tree -i leaf-core` is what proves it took.)
 #
 # They are pinned to the newest *published* version rather than to whatever the
-# checkout happens to be, which is why `leaf-core` says 0.1.4 while the leaf
-# checkout is 0.1.5. `provui-core` is a publishable crate, and a requirement no
-# registry can satisfy would make it unbuildable for anyone without these
-# checkouts — the patch is a local convenience and must never be load-bearing
-# for it. 0.1.5 satisfies `^0.1.4` regardless, so the patch still takes.
-leaf-ratatui = "0.1.5"
+# checkout happens to be. `provui-core` is a publishable crate, and a
+# requirement no registry can satisfy would make it unbuildable for anyone
+# without these checkouts — the patch is a local convenience and must never be
+# load-bearing for it.
+leaf-ratatui = "0.1.8"
 flower-ratatui = "0.4.0"

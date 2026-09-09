@@ -665,9 +665,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-core"
-version = "0.1.5"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "027ef115032a8ee77cf3c10878e6ca7495d9dc1a1bfc052784f6563bf951ead2"
+checksum = "cec8c78675e962115e661627282c72976310f7e4e3940dd3faef95d21f71ec8d"
 dependencies = [
  "anyhow",
  "twig-doc",
@@ -677,9 +677,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-raster"
-version = "0.1.5"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5228e5d1a16c9b512da3bd04affda6de63622299a4c26e5179b6d99ab2f0dd1e"
+checksum = "e49df66ddd92217e3e7bf6348819f8ed5e66884ec0fc78352bfa9b7384997814"
 dependencies = [
  "cosmic-text",
  "image",
@@ -688,9 +688,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-ratatui"
-version = "0.1.5"
+version = "0.1.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d10f4e988cf4500af06c61969ef1c7e9b6ab53195c5ddc9a98bb3967aa1060d8"
+checksum = "c8fcfd34f768dd1f0495fff21686d5107a50c586b63cb1e8492b26d1bc5b6158"
 dependencies = [
  "leaf-core",
  "leaf-raster",
@@ -1593,18 +1593,18 @@ dependencies = [
 
 [[package]]
 name = "twig-doc"
-version = "3.2.1"
+version = "3.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5e8351d2ad28da01599038b70d227550e58d6b08bba530e2344aeb4df05631ca"
+checksum = "1c48ca178a864d2063f60f058e68ef396e7d465cbb0eb15b2e856f7f1847c5e2"
 dependencies = [
  "twig-sys",
 ]
 
 [[package]]
 name = "twig-sys"
-version = "3.2.1"
+version = "3.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4feb15e47e16e6529e24b7b37b0a37d134054fab41d03247705ace6ecdc48df"
+checksum = "4375724d9b9e7b69a5935ab74536129a7a9d650988618b1a01c87d81c5c73d49"
 dependencies = [
  "twig-sys-linux-arm64-gnu",
  "twig-sys-linux-x64-gnu",
@@ -1615,33 +1615,33 @@ dependencies = [
 
 [[package]]
 name = "twig-sys-linux-arm64-gnu"
-version = "3.2.1"
+version = "3.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2c2a5cf04ebd8c0e7fa9fd7f943585a89818c5aee58d490d479b68f4004e41a8"
+checksum = "5fbbe27a12e5d1d6ec27b4d753d048e86240fad732a90d52fcc699860b425185"
 
 [[package]]
 name = "twig-sys-linux-x64-gnu"
-version = "3.2.1"
+version = "3.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f85254b9d01c2f97d2577189239315d560d17899ccdb16c1b6b332f00b4013a1"
+checksum = "adaff781d299a84a8682e638220572cd6161ea688813395cc73232d103b730e5"
 
 [[package]]
 name = "twig-sys-macos-arm64"
-version = "3.2.1"
+version = "3.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26b9355652253e057119c62f4d858af3356dcf8a4096fc1bcd9c3876b051ffdf"
+checksum = "08ce922a895d3cccbdb4cfd0c4932f4d9d6bbe1986375dc9002d1b0e5600ba53"
 
 [[package]]
 name = "twig-sys-wasm32"
-version = "3.2.1"
+version = "3.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4246465bd7a2c158a291a5dc96ef0bfeaa570218c6c56ce065a26515212b08e2"
+checksum = "4b101f2ffe8617103e448fbb3451106e8ceb643882784d81666e243df972163c"
 
 [[package]]
 name = "twig-sys-windows-x64-msvc"
-version = "3.2.1"
+version = "3.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85f8626563c4d7b50438b8d9539249e3f49002b31087abc9231ab7538f15f76c"
+checksum = "980555735ca52784ac02fd7e4b97f3d247935b7c61eb7f22b2b04ff5c857ea00"
 
 [[package]]
 name = "typenum"
