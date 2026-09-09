@@ -104,7 +104,7 @@ stop.
 That is a deliberate answer to a real question. An application over prov usually
 *does* separate the two halves — diaryx puts prov's structure in a sidebar and
 gives the form to the user-defined values — and it is a good design. It is not a
-general one. A mobile inspector, an 11-row terminal band and a settings sheet do
+general one. A mobile inspector, a 30-column terminal sidebar and a settings sheet do
 not want the same split, and a core that picked one would be a core each frontend
 had to work around. So the classification is general and lives here once; the
 arrangement is local and lives in the frontend.
@@ -178,36 +178,36 @@ resolve.
 ### The panes
 
 ```
- flower — ▶ document.md ●            ┐
- ‹document›                          │  metadata band: a third of the height,
-  title      New Title               │  bounded to 9…14 rows
-  draft      true                    │
-  part_of    ↑ The Vault             │  prov's structure, sunk below the
-  id         ajp7eq                  │  document's own values
-  j/k · l/h in/out · e edit · x del  ┘
-   leaf — body                       ┐  body label (▶ marks the focused pane)
- # Heading                           │
-                                     │  the body gets every row the band and
- Original body.                      │  the status line do not
-                                     ┘
+  ▶ leaf — body                          │ flower —   document.md ●
+ # Heading                               │ ‹document›
+                                         │  title      New Title
+ Original body.                          │  draft      true
+                                         │  part_of    ↑ The Vault
+                                         │  id         ajp7eq
+                                         │
+                                         │  j/k · l/h in/out · e edit · x del
  ⌂ document.md ○ saved  focus: body   ^W pane · ^S save · ^Q quit
 ```
 
-**A horizontal band, not a side-by-side split.** That is the widgets' decision
-rather than a taste: flower collapses its own two-pane page view below 64
-columns, and half of an 80-column terminal is 40 — so a vertical split would
-silently degrade the metadata view on the most ordinary terminal there is. Prose
-wants the width too. Stacking gives both panes the full width and spends the one
-scarce dimension, height, on the surface that is the point.
+**The body on the left, the metadata on the right.** The prose is the document
+and reads left to right; the frontmatter is what is true about it, which is what
+a sidebar is for. The metadata pane takes a third of the width, bounded to 30…80
+columns — the floor is where a `key … value` row stops being readable, the
+ceiling is where a wide terminal would be drawing pad between the two columns —
+and the body gets every column the pane and the divider do not. Both get the
+full height, which is the dimension a page of metadata actually spends: the
+model's inline budget is refit to the **pane's** height on every frame
+(`flower_ratatui::page_room` says how many item rows survive the widget's own
+chrome), so on a tall terminal the whole frontmatter is drawn on one page with
+nothing to drill into.
 
-The band is sized against `flower_ratatui::page_room`, which says how many item
-rows survive the widget's own three rows of chrome, and the model's inline budget
-is refit to the **pane's** height rather than the terminal's on every frame. The
-floor of 9 rows is where flower's budget stops using extra room anyway; the
-ceiling of 14 is where a band of mostly-empty list starts costing the prose. When
-the terminal is too short for both minimums the split is **abandoned rather than
-shrunk**, and whichever pane holds the keyboard takes the screen. A whole-file
-config document has no prose region at all, and is all metadata.
+The cost is flower's own two-pane page view, which wants 64 columns and does not
+get them from a third of an ordinary terminal. It falls back to its single-pane
+layout — the same interaction in one column — and the split view comes back
+from about 190 columns. When the terminal is too narrow for both minimums the
+split is **abandoned rather than shrunk**, and whichever pane holds the keyboard
+takes the screen. A whole-file config document has no prose region at all, and
+is all metadata.
 
 ### Focus
 
@@ -283,6 +283,17 @@ Two things do work without any of that: bracketed paste is enabled, so the
 terminal's own paste arrives as one `Event::Paste` and goes into the body as a
 single edit rather than as N keypresses; and mouse capture is on, so leaf gets
 click-to-place-caret, drag-select and scrolling.
+
+flower takes no mouse events, so the host maps a click in its pane back onto
+the row it landed on and drives the model in the vocabulary flower's keys use.
+A click stands on a row; a second click on the row the cursor is already on is
+Enter — a container opens as a page, a value opens for editing; the wheel is
+`j`/`k`, and works without taking the keyboard. In flower's two-pane view the
+other half is one step along the lineage, and a click there takes it: a row of
+the parent's page on the left backs out onto it, a row of the previewed page on
+the right opens it there. The click that brings the keyboard to the pane only
+ever stands, whatever row it landed on — focusing a pane is not Enter. A value
+that is open for editing stays open, and its row stays put, until Enter or Esc.
 
 ## Composing over it
 

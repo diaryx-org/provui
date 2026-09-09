@@ -16,9 +16,9 @@
 //!   `derived` set is where it goes.
 //! - **prov's structure sinks below the document's own values.** `title`,
 //!   `audience` and `mood` come first; `contents`, `part_of`, `id` and the
-//!   `prov:` block come after. In a band of nine to fourteen rows that is the
-//!   difference between seeing what the document says and scrolling past how it
-//!   is wired. `Facets::structural_keys` is the list; flower's `demoted` set is
+//!   `prov:` block come after. In a pane a third of the terminal wide that is
+//!   the difference between seeing what the document says and scrolling past
+//!   how it is wired. `Facets::structural_keys` is the list; flower's `demoted` set is
 //!   where it goes.
 //!
 //! Both are one line each, and a frontend that wants neither writes neither.

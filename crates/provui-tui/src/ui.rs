@@ -3,14 +3,17 @@
 //!
 //! Both widgets render into a `Rect` and neither knows the other exists, so
 //! everything shared between them — the split, the focus cue, the file name, the
-//! terminal's cursor — is decided here.
+//! terminal's cursor — is decided here. So is the one thing a widget cannot do
+//! for a mouse it never sees: [`metadata_hit`] says which of flower's rows a
+//! point in its pane is standing on.
 
-use flower_core::Mode;
+use flower_core::{Backend, Mode, Model, Page};
 use provui_core::DocumentSession;
 use ratatui::Frame;
 use ratatui::layout::{Constraint, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders};
 
 use crate::{App, FOCUS_CHORD, FOLLOW_CHORD, Focus};
 
@@ -20,59 +23,76 @@ static PANE_HINT: std::sync::LazyLock<String> =
 static FOLLOW_HINT: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| format!("{FOLLOW_CHORD} follow"));
 
-/// The smallest metadata band worth drawing.
+/// The narrowest metadata pane worth drawing.
 ///
-/// `flower_ratatui::page_room` spends 3 rows on chrome, and flower's inline
-/// budget floors at 6 item rows however little room it is given — so below 9
-/// the band is only losing rows off the bottom of a page that was going to be 6
-/// rows long anyway.
-const METADATA_MIN_ROWS: u16 = 9;
+/// A page row is an indent, a key, a gap, and the value flushed right, and
+/// flower truncates the value before it squeezes the key. Below this the value
+/// is an ellipsis after every key longer than a word, which is a pane showing
+/// what the keys are called and not what they say.
+const METADATA_MIN_COLS: u16 = 30;
 
-/// The largest metadata band worth drawing.
+/// The widest metadata pane worth drawing.
 ///
-/// Frontmatter is a handful of keys and the prose is the document; past this
-/// the band is taking rows from the body to draw empty list. A document with
-/// more metadata than fits navigates — that is what flower's pages are for.
-const METADATA_MAX_ROWS: u16 = 14;
+/// Frontmatter is keys and short values; past this the pane is drawing pad
+/// between the two columns. A wide terminal spends the rest on the prose.
+/// Comfortably above the 64 columns at which flower splits its own page view
+/// in two, so a wide terminal gets that view and a narrow one gets the
+/// single-pane layout it would have had on a phone.
+const METADATA_MAX_COLS: u16 = 80;
 
-/// A body pane shorter than this is not an editor, it is a peephole. Below the
+/// A body pane narrower than this is not an editor, it is a slot. Below the
 /// point where both panes clear their minimum, the split is abandoned rather
 /// than shrunk (see [`layout`]).
-const BODY_MIN_ROWS: u16 = 6;
+const BODY_MIN_COLS: u16 = 40;
+
+/// The two-pane threshold flower-ratatui applies to the pane it is given.
+/// Restated here because [`metadata_hit`] has to draw the same line the widget
+/// draws, and the widget does not export it.
+const FLOWER_TWO_PANE_MIN_WIDTH: u16 = 64;
 
 /// Where each piece of the screen went this frame.
 ///
-/// `None` means "not drawn": the metadata pane is absent when a short terminal
+/// `None` means "not drawn": the metadata pane is absent when a narrow terminal
 /// gave the screen to the body, and the body is absent both when the document
-/// has no prose region at all and when the metadata pane took the screen.
+/// has no prose region at all and when the metadata pane took the screen. The
+/// divider is there exactly when both panes are.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Panes {
-    pub metadata: Option<Rect>,
     pub body_label: Option<Rect>,
     pub body: Option<Rect>,
+    pub divider: Option<Rect>,
+    pub metadata: Option<Rect>,
     pub status: Rect,
 }
 
-/// Split `area` into the metadata band, the body pane, and the status line.
+/// Split `area` into the body pane on the left, the metadata pane on the
+/// right, and the status line.
 ///
-/// A horizontal band, not a side-by-side split, for two reasons that both come
-/// from the widgets: flower collapses its own two-pane page view below 64
-/// columns, and half of an 80-column terminal is 40 — so a vertical split would
-/// silently degrade the metadata view on the most ordinary terminal there is.
-/// Prose wants the width too. Stacking gives both panes the full width and
-/// spends the only scarce dimension, height, on the surface that is the point:
-/// the body gets everything the band and the status line do not.
+/// Side by side, with the prose leading: the body is the document and reads
+/// left to right, and the frontmatter is what is true about it, which is what a
+/// sidebar is for. The metadata pane takes a third of the width, bounded to
+/// keep a row readable on a narrow terminal and to stop a wide one drawing pad
+/// between keys and values; the body gets everything the pane and the divider
+/// do not. Both get the full height, which is the dimension a page of metadata
+/// actually spends — flower's inline budget is refit to the pane's height every
+/// frame, so a tall terminal draws the whole document with nothing to drill
+/// into.
 ///
-/// When the terminal is too short for both minimums the split is abandoned
-/// rather than shrunk, and the pane holding the keyboard takes the screen —
-/// which is why `focus` is an argument to a layout function.
+/// The cost is known: flower's own two-pane page view wants 64 columns, and a
+/// third of an ordinary terminal is not that. It gets the single-pane layout
+/// instead, which is the same interaction in one column, and the split view
+/// back from about 190 columns. When the terminal is too narrow for both
+/// minimums the split is abandoned rather than shrunk, and the pane holding the
+/// keyboard takes the screen — which is why `focus` is an argument to a layout
+/// function.
 pub fn layout(area: Rect, focus: Focus, has_body: bool) -> Panes {
     let [rest, status] = Layout::vertical([Constraint::Min(0), Constraint::Length(1)]).areas(area);
 
     let nothing = Panes {
-        metadata: None,
         body_label: None,
         body: None,
+        divider: None,
+        metadata: None,
         status,
     };
     if rest.height == 0 {
@@ -94,8 +114,8 @@ pub fn layout(area: Rect, focus: Focus, has_body: bool) -> Panes {
         (label, body)
     };
 
-    let band = (rest.height / 3).clamp(METADATA_MIN_ROWS, METADATA_MAX_ROWS);
-    if rest.height < band + BODY_MIN_ROWS {
+    let cols = (rest.width / 3).clamp(METADATA_MIN_COLS, METADATA_MAX_COLS);
+    if rest.width < BODY_MIN_COLS + 1 + cols {
         return match focus {
             Focus::Metadata => Panes {
                 metadata: Some(rest),
@@ -112,13 +132,18 @@ pub fn layout(area: Rect, focus: Focus, has_body: bool) -> Panes {
         };
     }
 
-    let [metadata, below] =
-        Layout::vertical([Constraint::Length(band), Constraint::Min(0)]).areas(rest);
-    let (label, body) = body_pane(below);
+    let [left, divider, metadata] = Layout::horizontal([
+        Constraint::Min(0),
+        Constraint::Length(1),
+        Constraint::Length(cols),
+    ])
+    .areas(rest);
+    let (label, body) = body_pane(left);
     Panes {
-        metadata: Some(metadata),
         body_label: Some(label),
         body: Some(body),
+        divider: Some(divider),
+        metadata: Some(metadata),
         status,
     }
 }
@@ -135,6 +160,13 @@ pub fn draw(f: &mut Frame, app: &mut App, session: &mut DocumentSession) {
     if let (Some(label), Some(body)) = (panes.body_label, panes.body) {
         pane_label(f, label, "leaf — body", app.focus == Focus::Body);
         leaf_ratatui::render(f, body, session.body_mut(), &mut app.editor);
+    }
+
+    if let Some(divider) = panes.divider {
+        f.render_widget(
+            Block::new().borders(Borders::LEFT).border_style(dim()),
+            divider,
+        );
     }
 
     if let Some(metadata) = panes.metadata {
@@ -188,6 +220,95 @@ fn park_cursor(f: &mut Frame, metadata: Rect, session: &DocumentSession) {
     };
     let x = metadata.x + x.min(metadata.width - 1);
     f.set_cursor_position(Position::new(x, metadata.bottom() - 1));
+}
+
+// ── the metadata pane, from the outside ──────────────────────────────────────
+
+/// What a point in the metadata pane is standing on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MetadataHit {
+    /// Row `i` of the page the cursor is on.
+    Row(usize),
+    /// Row `i` of the page one level out — the left pane, while the cursor's
+    /// page is on the right.
+    ParentRow(usize),
+    /// Row `i` of the page the cursor would open — the right pane, while the
+    /// cursor's page leads the split and the right one is a preview.
+    PeekRow(usize),
+}
+
+/// Which of flower's rows is drawn under `at`, in a metadata pane drawn into
+/// `metadata`. `None` for the chrome — header, breadcrumb, footer — and for
+/// the empty space under a short list.
+///
+/// flower-ratatui draws from a `Rect` and remembers nothing about where its
+/// rows went, and it takes no mouse events, so the host has to map a click the
+/// way `draw_in` laid the pane out: a header row and a footer row, and between
+/// them one page pane or two — each a breadcrumb over a list that scrolls only
+/// as far as it must to keep its selection on screen. Those are the widget's
+/// constants (one row of chrome at each end, two even panes from 64 columns,
+/// a list that starts at the top every frame), restated here. A widget that
+/// moves them moves this too; the draw tests in `main.rs` are where that
+/// would show.
+pub fn metadata_hit<B: Backend>(
+    metadata: Rect,
+    model: &Model<B>,
+    at: Position,
+) -> Option<MetadataHit> {
+    // The same three bands `draw_in` cuts: header, pages, footer.
+    let [_header, pages, _footer] = Layout::vertical([
+        Constraint::Length(1),
+        Constraint::Min(0),
+        Constraint::Length(1),
+    ])
+    .areas(metadata);
+    if !pages.contains(at) {
+        return None;
+    }
+
+    let current = |pane: Rect| {
+        row_in(pane, model.page(), Some(model.page_selected()), at).map(MetadataHit::Row)
+    };
+
+    if pages.width < FLOWER_TWO_PANE_MIN_WIDTH || model.pages_would_degenerate() {
+        return current(pages);
+    }
+
+    let [left, right] =
+        Layout::horizontal([Constraint::Percentage(50), Constraint::Percentage(50)]).areas(pages);
+
+    if model.page_leads_the_split() {
+        if left.contains(at) {
+            return current(left);
+        }
+        let peek = model.peek_page()?;
+        return row_in(right, &peek, None, at).map(MetadataHit::PeekRow);
+    }
+
+    if left.contains(at) {
+        let parent = model.parent_page();
+        let came_from = parent.position_of(model.focus());
+        return row_in(left, parent, came_from, at).map(MetadataHit::ParentRow);
+    }
+    current(right)
+}
+
+/// Which item of `page` is drawn at `at`, in a pane that is a breadcrumb row
+/// over a list highlighting `selected`.
+fn row_in(pane: Rect, page: &Page, selected: Option<usize>, at: Position) -> Option<usize> {
+    let [_crumb, list] = Layout::vertical([Constraint::Length(1), Constraint::Min(0)]).areas(pane);
+    if !list.contains(at) || page.is_empty() {
+        return None;
+    }
+    // ratatui's `List` is given a fresh state every frame, so it starts at the
+    // top and scrolls forward exactly as far as it must to bring the selection
+    // on screen. Every item is one row, so that is the selection less the last
+    // visible row — and nothing at all while the page fits, which a page sized
+    // by `fit_to_room` almost always does.
+    let height = list.height as usize;
+    let offset = selected.map_or(0, |s| s.saturating_sub(height - 1));
+    let index = offset + (at.y - list.y) as usize;
+    (index < page.items.len()).then_some(index)
 }
 
 fn dim() -> Style {
@@ -294,67 +415,67 @@ mod tests {
     }
 
     #[test]
-    fn a_roomy_terminal_gets_both_panes_and_the_body_gets_the_rest() {
-        let panes = layout(area(80, 40), Focus::Body, true);
-        let metadata = panes.metadata.expect("metadata band");
+    fn a_roomy_terminal_puts_the_body_left_and_the_metadata_right() {
+        let panes = layout(area(120, 40), Focus::Body, true);
+        let metadata = panes.metadata.expect("metadata pane");
         let body = panes.body.expect("body pane");
+        let label = panes.body_label.expect("body label");
+        let divider = panes.divider.expect("divider");
 
-        assert_eq!(
-            metadata.height, 13,
-            "a third of the 39 rows below the status"
-        );
-        assert_eq!(metadata.width, 80, "both panes get the full width");
-        assert_eq!(body.width, 80);
+        assert_eq!(metadata.width, 40, "a third of the width");
+        assert_eq!(divider.width, 1);
+        assert_eq!(body.width, 79, "the body gets the rest");
+        assert!(body.right() <= divider.x && divider.right() <= metadata.x);
         assert_eq!(panes.status.height, 1);
-        // Every row is spoken for: band + label + body + status.
-        assert_eq!(metadata.height + 1 + body.height + 1, 40);
+        // Every column and every row is spoken for.
+        assert_eq!(body.width + divider.width + metadata.width, 120);
+        assert_eq!(label.height + body.height + panes.status.height, 40);
+        assert_eq!(metadata.height + panes.status.height, 40);
         // The body is the primary surface, and on a roomy terminal it says so.
-        assert!(body.height > metadata.height, "{body:?} vs {metadata:?}");
+        assert!(body.width > metadata.width, "{body:?} vs {metadata:?}");
     }
 
     #[test]
-    fn the_band_never_shrinks_past_the_point_flower_stops_using_it() {
-        // A third of 30 is 10, which is between the two bounds and so is taken
-        // as-is; a third of 21 is 7, which is not, and is raised to the floor.
+    fn the_metadata_pane_stays_between_its_bounds() {
+        // A third of 80 is 26, which is not enough for a row, and is raised.
         assert_eq!(
-            layout(area(80, 31), Focus::Body, true)
+            layout(area(80, 24), Focus::Body, true)
                 .metadata
                 .unwrap()
-                .height,
-            10
+                .width,
+            METADATA_MIN_COLS
         );
+        // A third of 150 is 50, which is between the bounds and is taken as-is.
         assert_eq!(
-            layout(area(80, 22), Focus::Body, true)
+            layout(area(150, 24), Focus::Body, true)
                 .metadata
                 .unwrap()
-                .height,
-            METADATA_MIN_ROWS
+                .width,
+            50
         );
-        // And a tall terminal spends the extra rows on the prose, not the band.
+        // And a very wide terminal spends the extra columns on the prose.
         assert_eq!(
-            layout(area(80, 60), Focus::Body, true)
+            layout(area(300, 24), Focus::Body, true)
                 .metadata
                 .unwrap()
-                .height,
-            METADATA_MAX_ROWS
+                .width,
+            METADATA_MAX_COLS
         );
     }
 
     #[test]
-    fn a_short_terminal_gives_the_screen_to_whichever_pane_has_the_keyboard() {
-        let short = area(80, 12);
+    fn a_narrow_terminal_gives_the_screen_to_whichever_pane_has_the_keyboard() {
+        let narrow = area(60, 24);
 
-        let on_body = layout(short, Focus::Body, true);
-        assert!(on_body.metadata.is_none(), "no band");
-        assert_eq!(
-            on_body.body.expect("body").height,
-            10,
-            "label + body + status"
-        );
+        let on_body = layout(narrow, Focus::Body, true);
+        assert!(on_body.metadata.is_none() && on_body.divider.is_none());
+        assert_eq!(on_body.body.expect("body").width, 60);
+        assert_eq!(on_body.body.unwrap().height, 22, "label + body + status");
 
-        let on_metadata = layout(short, Focus::Metadata, true);
-        assert!(on_metadata.body.is_none(), "no body pane");
-        assert_eq!(on_metadata.metadata.expect("band").height, 11);
+        let on_metadata = layout(narrow, Focus::Metadata, true);
+        assert!(on_metadata.body.is_none() && on_metadata.divider.is_none());
+        let metadata = on_metadata.metadata.expect("metadata");
+        assert_eq!((metadata.width, metadata.height), (60, 23));
     }
 
     /// The hint list gives up its most guessable entries first, so the way out
@@ -388,19 +509,24 @@ mod tests {
     #[test]
     fn a_document_with_no_prose_region_is_all_metadata() {
         let panes = layout(area(80, 40), Focus::Body, false);
-        assert_eq!(panes.metadata.expect("band").height, 39);
+        let metadata = panes.metadata.expect("metadata");
+        assert_eq!((metadata.width, metadata.height), (80, 39));
         assert!(panes.body.is_none() && panes.body_label.is_none());
+        assert!(panes.divider.is_none());
     }
 
-    /// A terminal can be one row tall, and a layout that panics there is a
-    /// layout that panics on a window drag.
+    /// A terminal can be one row tall or one column wide, and a layout that
+    /// panics there is a layout that panics on a window drag.
     #[test]
     fn a_degenerate_terminal_draws_nothing_and_does_not_panic() {
-        for height in 0..=2 {
+        for (width, height) in [(80, 0), (80, 1), (80, 2), (0, 24), (1, 24), (0, 0)] {
             for focus in [Focus::Body, Focus::Metadata] {
-                let panes = layout(area(80, height), focus, true);
+                let panes = layout(area(width, height), focus, true);
                 if height <= 1 {
                     assert!(panes.metadata.is_none() && panes.body.is_none());
+                }
+                if width <= 1 {
+                    assert!(panes.divider.is_none(), "no room for a split at {width}");
                 }
             }
         }
