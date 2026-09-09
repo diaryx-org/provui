@@ -835,15 +835,36 @@ Original body.
         let mut app = App::new(&session, nav);
         begin(&mut session, &app, SCREEN);
 
+        // What the body pane shows after each move, as drawn. Arriving swaps
+        // the whole session under both widgets, and the one that has to be
+        // watched is leaf: it keeps per-terminal state across documents, and
+        // that state once handed the document you left back to the one you
+        // arrived at.
+        let body_shows = |session: &mut DocumentSession, app: &mut App, text: &str| {
+            let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+            terminal.draw(|f| ui::draw(f, app, session)).unwrap();
+            format!("{}", terminal.backend()).contains(text)
+        };
+        assert!(body_shows(&mut session, &mut app, "Prose."));
+
         stand_on(&mut session, &mut app, "part_of");
         on_key(&mut session, &mut app, ctrl('g'));
         assert!(session.path().ends_with("README.md"), "followed the link");
         assert_eq!(app.name, "README.md", "and the host caught up");
         assert_eq!(app.nav.depth(), 1);
+        assert!(
+            body_shows(&mut session, &mut app, "The Vault")
+                && !body_shows(&mut session, &mut app, "Prose."),
+            "the body pane shows the document arrived at"
+        );
 
         on_key(&mut session, &mut app, ctrl('o'));
         assert!(session.path().ends_with("note.md"), "and back again");
         assert_eq!(app.nav.depth(), 0);
+        assert!(
+            body_shows(&mut session, &mut app, "Prose."),
+            "and the body pane came back with it"
+        );
 
         // A back with nothing behind it says so rather than doing nothing.
         on_key(&mut session, &mut app, ctrl('o'));
