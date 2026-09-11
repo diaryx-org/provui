@@ -241,9 +241,9 @@ impl Facets {
                 relation_facet(relation, &relations, config),
             );
         }
-        let fields = config
-            .fields
-            .iter()
+        // The workspace-wide declaration of each field; see
+        // `schema::workspace_fields` for what a scoped one is to this crate.
+        let fields = crate::schema::workspace_fields(config)
             .map(|(name, spec)| (name.clone(), field_facet(name, spec)))
             .collect();
         Self {
@@ -456,12 +456,14 @@ content_hash: sha256-abc
         let mut config = WorkspaceConfig::default();
         config.fields.insert(
             "audience".to_string(),
-            FieldSpec {
+            vec![FieldSpec {
                 ty: None,
                 values: OpenClosed::Closed,
                 vocabulary: Some("audiences.yaml".to_string()),
                 reify: false,
-            },
+                default: None,
+                under: None,
+            }],
         );
         config.updated = "updated".to_string();
         config
@@ -589,12 +591,14 @@ content_hash: sha256-abc
         let mut config = workspace();
         config.fields.insert(
             "created".to_string(),
-            FieldSpec {
+            vec![FieldSpec {
                 ty: Some(FieldType::Str),
                 values: OpenClosed::default(),
                 vocabulary: None,
                 reify: false,
-            },
+                default: None,
+                under: None,
+            }],
         );
         let facets = Facets::from_config(&config);
         match facets.of_key("audience") {

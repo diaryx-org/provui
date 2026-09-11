@@ -48,6 +48,17 @@ pub fn schema_from_config(
     Schema::new(document_rules(config, vocabularies))
 }
 
+/// Each declared field with the declaration that governs the whole workspace —
+/// the one without an `under:` — skipping a field declared only under indexes.
+pub(crate) fn workspace_fields(
+    config: &WorkspaceConfig,
+) -> impl Iterator<Item = (&String, &prov::FieldSpec)> {
+    config
+        .fields
+        .keys()
+        .filter_map(|name| config.field(name).map(|spec| (name, spec)))
+}
+
 /// [`schema_from_config`]'s rules, before they become a schema — the
 /// composition point for an application overlay, and the peer of
 /// [`config_rules`](crate::config_schema::config_rules) one document over.
@@ -62,8 +73,13 @@ pub fn document_rules(
     let mut rules = Vec::new();
 
     // Field declarations → a typed rule, carrying an Enum constraint when the
-    // field also names a vocabulary.
-    for (field, spec) in &config.fields {
+    // field also names a vocabulary. The declaration read is the one governing
+    // the whole workspace: prov 0.12 lets a field be declared again `under:` an
+    // index, and which of those governs a document is a question this schema
+    // — built once per workspace, not per document — does not yet ask. A
+    // field declared only under indexes reads as undeclared here, as it did
+    // before prov could parse it.
+    for (field, spec) in workspace_fields(config) {
         // prov's declared type wins. A controlled field that declares none is
         // text, because that is what a vocabulary term is.
         let ty = spec
@@ -278,23 +294,27 @@ mod tests {
         let mut config = WorkspaceConfig::default();
         config.fields.insert(
             "audience".to_string(),
-            prov::FieldSpec {
+            vec![prov::FieldSpec {
                 ty: None,
                 values: OpenClosed::Closed,
                 vocabulary: Some("audiences.yaml".to_string()),
                 reify: false,
-            },
+                default: None,
+                under: None,
+            }],
         );
         // A type with no vocabulary — nothing to validate against, but the
         // editor still needs to know it is a date.
         config.fields.insert(
             "created".to_string(),
-            prov::FieldSpec {
+            vec![prov::FieldSpec {
                 ty: Some(prov::FieldType::Extended(prov::ExtKind::LocalDate)),
                 values: OpenClosed::default(),
                 vocabulary: None,
                 reify: false,
-            },
+                default: None,
+                under: None,
+            }],
         );
 
         let mut terms = BTreeMap::new();
@@ -443,12 +463,14 @@ mod tests {
         let mut config = WorkspaceConfig::default();
         config.fields.insert(
             "title".to_string(),
-            prov::FieldSpec {
+            vec![prov::FieldSpec {
                 ty: None,
                 values: OpenClosed::Closed,
                 vocabulary: Some("titles.yaml".to_string()),
                 reify: false,
-            },
+                default: None,
+                under: None,
+            }],
         );
         let schema = schema_from_config(&config, &BTreeMap::new());
         let rule = schema

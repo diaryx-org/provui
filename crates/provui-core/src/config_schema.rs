@@ -225,42 +225,56 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
     ));
 
     // ── fields: one entry per declared field ────────────────────────────────
-    rules.push(choice_terms(
-        path(&["fields", "*", "type"]),
-        "Value type",
-        Icon::Enum,
-        FIELD_TYPES
-            .iter()
-            .map(|t| term(t, field_type_gloss(t)))
-            .collect(),
-    ));
-    rules.push(choice(
-        path(&["fields", "*", "values"]),
-        "Which values are legal",
-        Icon::Enum,
-        &[
-            ("open", "Anything — the field is free text"),
-            ("closed", "Only terms the vocabulary lists"),
-        ],
-    ));
-    // A pointer to a vocabulary document. Typed as text with a link glyph rather
-    // than as a `Ref`: prov resolves it as a config *value*, not through a
-    // relation, so flower's Reference constraint (which names a relation) would
-    // describe it wrongly.
-    rules.push(text(
-        path(&["fields", "*", "vocabulary"]),
-        "Vocabulary document",
-        Icon::Link,
-    ));
-    rules.push(costly_when(
-        toggle(
-            path(&["fields", "*", "reify"]),
-            "Give each value its own document",
-        ),
-        true,
-        Severity::Confirm,
-        "Creates a document for every distinct value of this field across the workspace.",
-    ));
+    // A field is declared once, as a mapping, or several times, as a list of
+    // mappings each `under:` an index (prov 0.12) — `status` as one set of
+    // terms under `Tasks` and another under `Proposals`. The keys are the same
+    // in both spellings, so each rule is stated at both depths.
+    for form in [&["fields", "*"][..], &["fields", "*", "[]"][..]] {
+        let at = |key: &str| path(&[form, &[key]].concat());
+        rules.push(choice_terms(
+            at("type"),
+            "Value type",
+            Icon::Enum,
+            FIELD_TYPES
+                .iter()
+                .map(|t| term(t, field_type_gloss(t)))
+                .collect(),
+        ));
+        rules.push(choice(
+            at("values"),
+            "Which values are legal",
+            Icon::Enum,
+            &[
+                ("open", "Anything — the field is free text"),
+                ("closed", "Only terms the vocabulary lists"),
+            ],
+        ));
+        // A pointer to a vocabulary document. Typed as text with a link glyph
+        // rather than as a `Ref`: prov resolves it as a config *value*, not
+        // through a relation, so flower's Reference constraint (which names a
+        // relation) would describe it wrongly.
+        rules.push(text(at("vocabulary"), "Vocabulary document", Icon::Link));
+        rules.push(costly_when(
+            toggle(at("reify"), "Give each value its own document"),
+            true,
+            Severity::Confirm,
+            "Creates a document for every distinct value of this field across the workspace.",
+        ));
+        // The index this declaration governs the documents under, resolved as a
+        // view's `under` is — a path, an `id:`, or a title.
+        rules.push(text(
+            at("under"),
+            "Governs documents under this index (empty covers the whole workspace)",
+            Icon::Link,
+        ));
+        // A starting value, written by `new` and never read back. Free text:
+        // prov takes any value here, and its type is the field's to say.
+        rules.push(text(
+            at("default"),
+            "What a new document starts with",
+            Icon::Text,
+        ));
+    }
 
     // ── policy axes ─────────────────────────────────────────────────────────
     let id_storage = choice(
@@ -292,6 +306,19 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
         path(&["updated"]),
         "Field stamped on save (empty turns it off)",
         Icon::Clock,
+    ));
+    rules.push(text(
+        path(&["created"]),
+        "Field stamped when a document is made (empty turns it off)",
+        Icon::Clock,
+    ));
+    // Read from the workspace node only — the one policy home reachable before
+    // the root is known. Drawn as a link, not a `Ref`, for the reason
+    // `fields.*.vocabulary` is.
+    rules.push(text(
+        path(&["root"]),
+        "The root document (empty lets prov find it)",
+        Icon::Link,
     ));
     rules.push(costly_when(
         choice(
@@ -632,12 +659,14 @@ mod tests {
         for (name, ty) in fields {
             config.fields.insert(
                 (*name).to_string(),
-                FieldSpec {
+                vec![FieldSpec {
                     ty: *ty,
                     values: OpenClosed::default(),
                     vocabulary: None,
                     reify: false,
-                },
+                    default: None,
+                    under: None,
+                }],
             );
         }
         config
@@ -741,7 +770,25 @@ mod tests {
     #[test]
     fn every_key_prov_writes_is_governed() {
         let mut config = config_with(&[("audience", Some(ProvFieldType::Str))]);
-        config.fields.get_mut("audience").unwrap().vocabulary = Some("audiences.yaml".into());
+        config.fields.get_mut("audience").unwrap()[0].vocabulary = Some("audiences.yaml".into());
+        // A field declared twice, each under an index, is written as a list —
+        // the other spelling of every `fields.<name>` key, plus the two keys
+        // only a scoped declaration or a stencil carries.
+        config.fields.insert(
+            "status".to_string(),
+            ["Tasks", "Proposals"]
+                .map(|under| FieldSpec {
+                    ty: Some(ProvFieldType::Str),
+                    values: OpenClosed::Closed,
+                    vocabulary: Some(format!("{under}.md")),
+                    reify: false,
+                    default: Some(Value::String("open".into())),
+                    under: Some(under.to_string()),
+                })
+                .to_vec(),
+        );
+        config.created = "created".to_string();
+        config.root = Some("README.md".to_string());
         let schema = config_schema(&config);
 
         fn walk(schema: &Schema, path: &mut Vec<Seg>, value: &Value, ungoverned: &mut Vec<String>) {
@@ -749,6 +796,13 @@ mod tests {
                 Value::Mapping(map) => {
                     for (key, child) in map {
                         path.push(Seg::Key(key.clone()));
+                        walk(schema, path, child, ungoverned);
+                        path.pop();
+                    }
+                }
+                Value::Sequence(items) => {
+                    for (i, child) in items.iter().enumerate() {
+                        path.push(Seg::Index(i));
                         walk(schema, path, child, ungoverned);
                         path.pop();
                     }

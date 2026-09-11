@@ -470,7 +470,7 @@ fn load_vocabularies(
     config: &WorkspaceConfig,
 ) -> BTreeMap<String, Vocabulary> {
     let mut loaded = BTreeMap::new();
-    for (field, spec) in &config.fields {
+    for (field, spec) in crate::schema::workspace_fields(config) {
         let Some(pointer) = spec.vocabulary.as_deref() else {
             continue;
         };
