@@ -28,6 +28,12 @@ release on goes up through `publish.yml`.
 
 <!-- git-cliff:begin — generated; edits here are overwritten -->
 
+_No commits since the last tag._
+
+<!-- git-cliff:end -->
+
+## v0.2.0 — 2026-09-12
+
 ### Breaking
 
 - **core** — a document's schema is the declaration that reaches it ([`82dee7a`](https://github.com/diaryx-org/provui/commit/82dee7a4f2ee1144d038264be03a453c7ab5e630))
@@ -64,7 +70,6 @@ flower's cursor, where they were previously inert.
 - `Facets::of_key` answers `Field` for a key declared
   only under indexes, where it previously answered `Carried`.
 
-<!-- git-cliff:end -->
 ## v0.1.1 — 2026-09-02
 
 ### Fixed
