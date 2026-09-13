@@ -665,9 +665,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-core"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cec8c78675e962115e661627282c72976310f7e4e3940dd3faef95d21f71ec8d"
+checksum = "7f978ef8c5f3ea2c3174dbd717687e95c3ca7b4dfe1ce06ffa739498a624f165"
 dependencies = [
  "anyhow",
  "twig-doc",
@@ -677,9 +677,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-raster"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e49df66ddd92217e3e7bf6348819f8ed5e66884ec0fc78352bfa9b7384997814"
+checksum = "205a0a4e01c9dc2c4224f08456d8a7b1f210f7ebfb3669de0f73f637bd505a98"
 dependencies = [
  "cosmic-text",
  "image",
@@ -688,9 +688,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-ratatui"
-version = "0.1.8"
+version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8fcfd34f768dd1f0495fff21686d5107a50c586b63cb1e8492b26d1bc5b6158"
+checksum = "4bcd46c71df9d653f43c88f7d582ffc3813565d045e4decfad7cc879115e69f2"
 dependencies = [
  "leaf-core",
  "leaf-raster",
@@ -2015,7 +2015,3 @@ checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core",
 ]
-
-[[patch.unused]]
-name = "fig"
-version = "4.0.0"

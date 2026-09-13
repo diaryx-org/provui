@@ -38,7 +38,7 @@ flower-core = "0.4.0"
 # The rich-text body editor over twig. `default-features = false` so a consumer
 # that also links `leaf-ffi` unifies on one leaf-core copy and one twig-sys
 # build rather than two.
-leaf-core = { version = "0.1.8", default-features = false }
+leaf-core = { version = "0.1.9", default-features = false }
 
 # The two terminal widgets, which `provui-tui` embeds. Both are on crates.io and
 # are consumed from it, like everything else here; to build against a checkout
@@ -59,5 +59,5 @@ leaf-core = { version = "0.1.8", default-features = false }
 # requirement no registry can satisfy would make it unbuildable for anyone
 # without these checkouts — the patch is a local convenience and must never be
 # load-bearing for it.
-leaf-ratatui = "0.1.8"
+leaf-ratatui = "0.1.9"
 flower-ratatui = "0.4.0"
