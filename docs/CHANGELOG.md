@@ -28,6 +28,10 @@ release on goes up through `publish.yml`.
 
 <!-- git-cliff:begin — generated; edits here are overwritten -->
 
+### Breaking
+
+- **core** — a document's schema is the declaration that reaches it ([`82dee7a`](https://github.com/diaryx-org/provui/commit/82dee7a4f2ee1144d038264be03a453c7ab5e630))
+
 ### Added
 
 - **tui** — body on the left, frontmatter on the right, and a mouse for flower ([`0a06852`](https://github.com/diaryx-org/provui/commit/0a068524d9a36217b6d46ee75927483c4e09d9ec))
@@ -50,6 +54,15 @@ flower's cursor, where they were previously inert.
 - a config document carrying `created`, `root`,
   `fields.<name>.under`, `fields.<name>.default`, or a field declared as
   a list now edits under a rule where before each row was ungoverned text.
+
+- a document below an index that a field is declared
+  `under:` is now edited with that declaration's type, vocabulary and
+  open/closed rule, where it was previously edited as free text. A closed
+  vocabulary therefore starts rejecting values outside it in those
+  documents. A document outside every scope is unchanged.
+
+- `Facets::of_key` answers `Field` for a key declared
+  only under indexes, where it previously answered `Carried`.
 
 <!-- git-cliff:end -->
 ## v0.1.1 — 2026-09-02
