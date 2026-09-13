@@ -24,23 +24,116 @@
 //!   as untyped text boxes. They come **last**, so a workspace that declares a
 //!   field of the same name shadows them.
 //!
+//! ## Which declaration a document is governed by
+//!
+//! prov 0.12 lets a field be declared more than once, each declaration `under:`
+//! an index: `status` is one closed set of terms below `Tasks`, another below
+//! `Proposals`, and nothing at all elsewhere. Which declaration governs is then
+//! a fact about *where the document sits*, so a schema is really a per-document
+//! thing. There are two entry points because a caller does not always have a
+//! document in hand:
+//!
+//! - [`schema_for_document`] / [`document_rules_for`] take prov's resolved
+//!   [`FieldScopes`] and the document's workspace-relative path, and build the
+//!   schema that document is actually edited under. This is what
+//!   [`WorkspaceView::schema_for`](crate::WorkspaceView::schema_for) uses.
+//! - [`schema_from_config`] / [`document_rules`] read only the declarations
+//!   that govern the whole workspace — the ones without an `under:` — which is
+//!   the right answer for a caller composing an overlay over the workspace's
+//!   vocabulary with no particular document in mind, and the only answer there
+//!   was before prov could scope a field. A field declared only under indexes
+//!   is absent from this schema, as it is absent from a document outside every
+//!   one of its scopes.
+//!
 //! For the *config* document rather than the content documents, see
 //! [`crate::config_schema`](mod@crate::config_schema).
 
 use std::collections::BTreeMap;
+use std::path::Path;
 
 use flower_core::schema::{Constraint, FieldRule, Schema};
 use flower_core::{Cardinality, FieldType, Icon, PathPat, Presentation, SegPat, Term, Tint};
-use prov::{Cardinality as ProvCardinality, OpenClosed, Vocabulary, WorkspaceConfig};
+use prov::workspace::FieldScopes;
+use prov::{Cardinality as ProvCardinality, FieldSpec, OpenClosed, Vocabulary, WorkspaceConfig};
 
 use crate::facets::{self, Facets};
 use crate::rules::{path, text, toggle};
+
+/// The vocabularies a workspace's field declarations point at, one per
+/// **declaration** rather than one per field.
+///
+/// Keyed that way because a scoped field has several: `status` under `Tasks`
+/// and `status` under `Proposals` name different stores, and a map keyed by
+/// field name could hold only one of them. The index is the declaration's
+/// position in `fields.<name>`'s list — the same number
+/// [`FieldScopes::index_for`] answers with, so the two compose without a
+/// lookup between them.
+///
+/// A vocabulary that failed to load is simply absent; see
+/// [`WorkspaceView`](crate::WorkspaceView) for why that is not an error.
+#[derive(Debug, Clone, Default)]
+pub struct Vocabularies {
+    by_declaration: BTreeMap<(String, usize), Vocabulary>,
+}
+
+impl Vocabularies {
+    /// Record the vocabulary declaration `index` of `field` points at.
+    pub fn insert(&mut self, field: impl Into<String>, index: usize, vocabulary: Vocabulary) {
+        self.by_declaration
+            .insert((field.into(), index), vocabulary);
+    }
+
+    /// The vocabulary declaration `index` of `field` points at, if it loaded.
+    pub fn get(&self, field: &str, index: usize) -> Option<&Vocabulary> {
+        self.by_declaration.get(&(field.to_string(), index))
+    }
+
+    /// The vocabulary the declaration governing `doc` points at — `None` when
+    /// no declaration governs it, or when the one that does has no vocabulary
+    /// or it did not load.
+    pub fn for_document(
+        &self,
+        config: &WorkspaceConfig,
+        scopes: &FieldScopes,
+        field: &str,
+        doc: &Path,
+    ) -> Option<&Vocabulary> {
+        self.get(field, scopes.index_for(config, field, doc)?)
+    }
+
+    /// The workspace-wide declarations' vocabularies, keyed by field name — the
+    /// shape [`schema_from_config`] takes. A field declared only under indexes
+    /// has no entry.
+    pub fn unscoped(&self, config: &WorkspaceConfig) -> BTreeMap<String, Vocabulary> {
+        config
+            .fields
+            .iter()
+            .filter_map(|(name, declarations)| {
+                let index = declarations.iter().position(|d| d.under.is_none())?;
+                let vocabulary = self.get(name, index)?;
+                Some((name.clone(), vocabulary.clone()))
+            })
+            .collect()
+    }
+
+    /// Every loaded vocabulary with the field and declaration index it belongs
+    /// to.
+    pub fn iter(&self) -> impl Iterator<Item = (&str, usize, &Vocabulary)> {
+        self.by_declaration
+            .iter()
+            .map(|((field, index), vocabulary)| (field.as_str(), *index, vocabulary))
+    }
+}
 
 /// Build a flower [`Schema`] from a resolved prov workspace config and the
 /// vocabularies its controlled fields point at (keyed by field name). Vocabularies
 /// the caller could not load are simply absent, yielding an enum with no offered
 /// terms — still a rule (so a closed field with no store rejects everything, which
 /// is the honest signal that its vocabulary is missing).
+///
+/// Reads only the declarations governing the whole workspace; see the module
+/// docs, and [`schema_for_document`] for the schema a particular document is
+/// edited under.
 pub fn schema_from_config(
     config: &WorkspaceConfig,
     vocabularies: &BTreeMap<String, Vocabulary>,
@@ -48,11 +141,28 @@ pub fn schema_from_config(
     Schema::new(document_rules(config, vocabularies))
 }
 
+/// Build the flower [`Schema`] the document at `doc` (workspace-relative) is
+/// edited under: each field governed by whichever of its declarations
+/// `scopes` says reaches that document, with the vocabulary *that* declaration
+/// points at.
+///
+/// A field none of whose declarations reach `doc` is not in the schema — it is
+/// a value prov merely carries there, and offering a picker for it would claim
+/// otherwise.
+pub fn schema_for_document(
+    config: &WorkspaceConfig,
+    scopes: &FieldScopes,
+    vocabularies: &Vocabularies,
+    doc: &Path,
+) -> Schema {
+    Schema::new(document_rules_for(config, scopes, vocabularies, doc))
+}
+
 /// Each declared field with the declaration that governs the whole workspace —
 /// the one without an `under:` — skipping a field declared only under indexes.
 pub(crate) fn workspace_fields(
     config: &WorkspaceConfig,
-) -> impl Iterator<Item = (&String, &prov::FieldSpec)> {
+) -> impl Iterator<Item = (&String, &FieldSpec)> {
     config
         .fields
         .keys()
@@ -70,16 +180,41 @@ pub fn document_rules(
     config: &WorkspaceConfig,
     vocabularies: &BTreeMap<String, Vocabulary>,
 ) -> Vec<FieldRule> {
+    let fields = workspace_fields(config)
+        .map(|(field, spec)| (field.as_str(), spec, vocabularies.get(field)));
+    rules_over(config, fields)
+}
+
+/// [`schema_for_document`]'s rules, before they become a schema — the same
+/// composition point, for a caller that knows which document it is composing
+/// for.
+pub fn document_rules_for(
+    config: &WorkspaceConfig,
+    scopes: &FieldScopes,
+    vocabularies: &Vocabularies,
+    doc: &Path,
+) -> Vec<FieldRule> {
+    let fields = config.fields.iter().filter_map(|(field, declarations)| {
+        let index = scopes.index_for(config, field, doc)?;
+        let spec = declarations.get(index)?;
+        Some((field.as_str(), spec, vocabularies.get(field, index)))
+    });
+    rules_over(config, fields)
+}
+
+/// The content-document rules, given the field declarations that apply — each
+/// with the vocabulary it points at, when that loaded. Both public builders
+/// come through here; they differ only in which declaration of each field they
+/// hand in.
+fn rules_over<'a>(
+    config: &WorkspaceConfig,
+    fields: impl Iterator<Item = (&'a str, &'a FieldSpec, Option<&'a Vocabulary>)>,
+) -> Vec<FieldRule> {
     let mut rules = Vec::new();
 
     // Field declarations → a typed rule, carrying an Enum constraint when the
-    // field also names a vocabulary. The declaration read is the one governing
-    // the whole workspace: prov 0.12 lets a field be declared again `under:` an
-    // index, and which of those governs a document is a question this schema
-    // — built once per workspace, not per document — does not yet ask. A
-    // field declared only under indexes reads as undeclared here, as it did
-    // before prov could parse it.
-    for (field, spec) in workspace_fields(config) {
+    // field also names a vocabulary.
+    for (field, spec, vocabulary) in fields {
         // prov's declared type wins. A controlled field that declares none is
         // text, because that is what a vocabulary term is.
         let ty = spec
@@ -88,7 +223,7 @@ pub fn document_rules(
         // Only a field with a vocabulary constrains its values; a type-only
         // field renders as its type and rejects nothing.
         let constraint = spec.vocabulary.as_ref().map(|_| Constraint::Enum {
-            values: vocabularies.get(field).map(vocab_terms).unwrap_or_default(),
+            values: vocabulary.map(vocab_terms).unwrap_or_default(),
             closed: matches!(spec.values, OpenClosed::Closed),
         });
         let icon = if constraint.is_some() {
@@ -102,8 +237,8 @@ pub fn document_rules(
                 .constraint_opt(constraint.clone())
                 .present(Presentation::default().icon(icon.clone()))
         };
-        rules.push(rule(PathPat::key(field.clone())));
-        rules.push(rule(PathPat::each_item_of(field.clone())));
+        rules.push(rule(PathPat::key(field.to_string())));
+        rules.push(rule(PathPat::each_item_of(field.to_string())));
     }
 
     // Relations → Reference constraints. The spanning relation is the containment

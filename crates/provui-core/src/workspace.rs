@@ -9,7 +9,8 @@
 //!
 //! [`WorkspaceView`] is prov's read surface with the pieces an editor needs
 //! resolved once and kept: the effective config, the vocabularies its controlled
-//! fields point at, the [`Facets`] its vocabulary implies, and the
+//! fields point at, which region of the tree each scoped field declaration
+//! governs, the [`Facets`] its vocabulary implies, and the
 //! [`flower_core::Schema`] a content document is edited under. It is a
 //! *view* — the name is the promise. Nothing here writes.
 //!
@@ -28,18 +29,18 @@
 //! nothing to overlap: each entry point blocks with prov's own
 //! [`prov::block_on`], which is the same executor prov's CLI uses.
 
-use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use flower_core::Schema;
 use prov::index::FileIndex;
+use prov::workspace::FieldScopes;
 use prov::{
-    Backlink, Discovery, Settings, StdFs, Target, Vocabulary, Workspace, WorkspaceConfig, block_on,
-    discover,
+    Backlink, Discovery, Settings, StdFs, Target, Workspace, WorkspaceConfig, block_on, discover,
 };
 
 use crate::facets::Facets;
 use crate::links::MetaLink;
+use crate::schema::Vocabularies;
 use crate::session::{DocumentSession, SessionError};
 
 fn we(e: impl std::fmt::Display) -> SessionError {
@@ -141,7 +142,12 @@ pub struct WorkspaceView {
     /// different schema than the content around it.
     config_doc: Option<PathBuf>,
     config: WorkspaceConfig,
-    vocabularies: BTreeMap<String, Vocabulary>,
+    /// Which region of the tree each scoped field declaration governs. Resolved
+    /// once: it is a walk per scoped declaration, and a title-index scan when
+    /// an anchor is a `[[Title]]`, which is a cost to pay at open and not on
+    /// every document.
+    scopes: FieldScopes,
+    vocabularies: Vocabularies,
     facets: Facets,
 }
 
@@ -198,6 +204,11 @@ impl WorkspaceView {
             .build();
 
         let config_doc = block_on(ws.config_path(&root_doc)).map_err(we)?;
+        // A scoped declaration whose anchor resolves to nothing governs no
+        // document, and `FieldScopes` says so per declaration rather than
+        // failing. That is the right policy for an editor for the same reason
+        // as a vocabulary that does not load: it is `prov check`'s finding.
+        let scopes = block_on(ws.field_scopes_of(&root_doc, &config)).map_err(we)?;
         let vocabularies = load_vocabularies(&ws, &root_doc, &config);
         let facets = Facets::from_config(&config);
         Ok(Self {
@@ -205,6 +216,7 @@ impl WorkspaceView {
             root_doc,
             config_doc,
             config,
+            scopes,
             vocabularies,
             facets,
         })
@@ -239,10 +251,18 @@ impl WorkspaceView {
         &self.facets
     }
 
-    /// The vocabularies the controlled fields point at, keyed by field name. A
+    /// The vocabularies the controlled fields point at, one per declaration. A
     /// vocabulary that failed to load is simply absent.
-    pub fn vocabularies(&self) -> &BTreeMap<String, Vocabulary> {
+    pub fn vocabularies(&self) -> &Vocabularies {
         &self.vocabularies
+    }
+
+    /// Which region of the tree each scoped field declaration governs — what
+    /// [`schema_for`](Self::schema_for) asks to know which declaration of a
+    /// field reaches a document. A workspace with no scoped declarations has
+    /// an empty one that always falls back to the workspace-wide declaration.
+    pub fn field_scopes(&self) -> &FieldScopes {
+        &self.scopes
     }
 
     /// prov's read surface, for a frontend that wants more of it than this view
@@ -251,14 +271,23 @@ impl WorkspaceView {
         &self.ws
     }
 
-    /// The schema a **content** document in this workspace is edited under.
+    /// The schema a **content** document in this workspace is edited under
+    /// when no particular document is in hand: the workspace-wide declaration
+    /// of each field, and nothing for a field declared only under indexes.
+    ///
+    /// For a document you have, [`schema_for`](Self::schema_for) is the real
+    /// answer — it is this, with each scoped field resolved to the declaration
+    /// that governs *that* document.
     pub fn content_schema(&self) -> Schema {
-        crate::schema_from_config(&self.config, &self.vocabularies)
+        crate::schema_from_config(&self.config, &self.vocabularies.unscoped(&self.config))
     }
 
     /// The schema `path` is edited under: the config-document schema for the
-    /// document that *is* this workspace's config, and the content schema for
-    /// everything else.
+    /// document that *is* this workspace's config, and for everything else the
+    /// content schema with each field governed by whichever of its
+    /// declarations reaches this document — `status` under `Tasks` gets the
+    /// task terms, under `Proposals` the proposal terms, and a document under
+    /// neither gets no `status` rule at all.
     ///
     /// A fact about which document this is, not a preference. `prov.yaml` is a
     /// document whose keys are policy, and editing it under the content schema
@@ -267,7 +296,12 @@ impl WorkspaceView {
     pub fn schema_for(&self, path: &Path) -> Schema {
         match self.config_document() {
             Some(config_doc) if same_file(&config_doc, path) => crate::config_schema(&self.config),
-            _ => self.content_schema(),
+            _ => crate::schema::schema_for_document(
+                &self.config,
+                &self.scopes,
+                &self.vocabularies,
+                &self.relative(path),
+            ),
         }
     }
 
@@ -456,7 +490,8 @@ fn load_registry(
     }
 }
 
-/// Load every controlled field's vocabulary, keyed by field name.
+/// Load the vocabulary every controlled field declaration points at — one per
+/// declaration, since a field declared under two indexes names two stores.
 ///
 /// A vocabulary that does not load is left out rather than raised: it means the
 /// pointer is broken or the store is malformed, which is `prov check`'s finding
@@ -468,22 +503,25 @@ fn load_vocabularies(
     ws: &Workspace<StdFs, prov::identity::NoIdentity, FileIndex>,
     root_doc: &Path,
     config: &WorkspaceConfig,
-) -> BTreeMap<String, Vocabulary> {
-    let mut loaded = BTreeMap::new();
-    for (field, spec) in crate::schema::workspace_fields(config) {
-        let Some(pointer) = spec.vocabulary.as_deref() else {
-            continue;
-        };
-        // A reified vocabulary's terms are documents down the spanning tree, not
-        // rows in a flat store, so it is read a different way. What makes it
-        // reified is the declaration, not anything the target says about itself.
-        let vocabulary = if spec.reify {
-            block_on(ws.load_reified_vocabulary(root_doc, field, spec))
-        } else {
-            block_on(ws.load_vocabulary(root_doc, pointer))
-        };
-        if let Ok(Some(vocabulary)) = vocabulary {
-            loaded.insert(field.clone(), vocabulary);
+) -> Vocabularies {
+    let mut loaded = Vocabularies::default();
+    for (field, declarations) in &config.fields {
+        for (index, spec) in declarations.iter().enumerate() {
+            let Some(pointer) = spec.vocabulary.as_deref() else {
+                continue;
+            };
+            // A reified vocabulary's terms are documents down the spanning
+            // tree, not rows in a flat store, so it is read a different way.
+            // What makes it reified is the declaration, not anything the target
+            // says about itself.
+            let vocabulary = if spec.reify {
+                block_on(ws.load_reified_vocabulary(root_doc, field, spec))
+            } else {
+                block_on(ws.load_vocabulary(root_doc, pointer))
+            };
+            if let Ok(Some(vocabulary)) = vocabulary {
+                loaded.insert(field.clone(), index, vocabulary);
+            }
         }
     }
     loaded
@@ -577,7 +615,10 @@ mod tests {
         // The config document's `fields` reached the effective config, so the
         // vocabulary it points at was loaded.
         assert!(view.config().fields.contains_key("audience"));
-        let vocab = view.vocabularies().get("audience").expect("audiences.yaml");
+        let vocab = view
+            .vocabularies()
+            .get("audience", 0)
+            .expect("audiences.yaml");
         assert!(vocab.terms.contains_key("public"));
     }
 
@@ -638,6 +679,122 @@ mod tests {
         assert!(
             schema.rule_for(&[Seg::Key("fixity".into())]).is_some(),
             "the config document is edited under the config schema"
+        );
+    }
+
+    /// The shape of the org's `tasks` preset: `status` declared twice, each
+    /// `under:` an index named by title, with a different closed vocabulary
+    /// each time, and no workspace-wide declaration at all.
+    fn scoped_vault(name: &str) -> Vault {
+        let vault = Vault::new(name);
+        let dir = &vault.0;
+        std::fs::create_dir_all(dir.join("tasks")).unwrap();
+        std::fs::create_dir_all(dir.join("proposals")).unwrap();
+        std::fs::write(
+            dir.join("README.md"),
+            "---\ntitle: The Vault\nconfig: prov.yaml\ncontents:\n- '[A Note](notes/note.md)'\n- '[Tasks](tasks.md)'\n- '[Proposals](proposals.md)'\n---\n# The Vault\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("prov.yaml"),
+            "title: vault config\nfields:\n  status:\n  - under: '[[Tasks]]'\n    values: closed\n    vocabulary: task-statuses.yaml\n  - under: '[[Proposals]]'\n    values: closed\n    vocabulary: proposal-statuses.yaml\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("task-statuses.yaml"),
+            "title: Task statuses\nvocabulary:\n  field: status\n  values: closed\nterms:\n  open: {}\n  done: {}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("proposal-statuses.yaml"),
+            "title: Proposal statuses\nvocabulary:\n  field: status\n  values: closed\nterms:\n  draft: {}\n  accepted: {}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("tasks.md"),
+            "---\ntitle: Tasks\npart_of: '[The Vault](/README.md)'\ncontents:\n- '[Fix the thing](tasks/fix.md)'\n---\n# Tasks\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("tasks/fix.md"),
+            "---\ntitle: Fix the thing\npart_of: '[Tasks](/tasks.md)'\nstatus: open\n---\n# Fix the thing\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("proposals.md"),
+            "---\ntitle: Proposals\npart_of: '[The Vault](/README.md)'\ncontents:\n- '[Do it differently](proposals/differently.md)'\n---\n# Proposals\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("proposals/differently.md"),
+            "---\ntitle: Do it differently\npart_of: '[Proposals](/proposals.md)'\nstatus: draft\n---\n# Do it differently\n",
+        )
+        .unwrap();
+        vault
+    }
+
+    fn status_terms(view: &WorkspaceView, rel: &str) -> Option<Vec<String>> {
+        use flower_core::FieldRuleExt;
+        let schema = view.schema_for(&view.absolute(Path::new(rel)));
+        schema.rule_for(&[Seg::Key("status".into())]).map(|rule| {
+            let (terms, closed) = rule.enum_constraint().expect("a closed enum");
+            assert!(closed, "{rel}: the declaration says `values: closed`");
+            terms.iter().map(|t| t.value.clone()).collect()
+        })
+    }
+
+    /// Which `status` a document gets is a fact about where it sits: the task
+    /// terms under `Tasks`, the proposal terms under `Proposals`, and nothing
+    /// anywhere else — the index included, which is not one of its own records.
+    #[test]
+    fn a_scoped_field_is_governed_by_the_declaration_that_reaches_the_document() {
+        let vault = scoped_vault("scoped");
+        let view = WorkspaceView::discover(&vault.path("README.md"))
+            .unwrap()
+            .unwrap();
+
+        // Both declarations' vocabularies loaded, each under its own index.
+        assert!(view.vocabularies().get("status", 0).is_some());
+        assert!(view.vocabularies().get("status", 1).is_some());
+        assert!(view.field_scopes().unresolved().is_empty());
+
+        assert_eq!(
+            status_terms(&view, "tasks/fix.md").as_deref(),
+            Some(&["done".to_string(), "open".to_string()][..]),
+            "a task draws the task terms"
+        );
+        assert_eq!(
+            status_terms(&view, "proposals/differently.md").as_deref(),
+            Some(&["accepted".to_string(), "draft".to_string()][..]),
+            "a proposal draws the proposal terms"
+        );
+        assert!(
+            status_terms(&view, "notes/note.md").is_none(),
+            "a document under neither index has no status declaration"
+        );
+        assert!(
+            status_terms(&view, "tasks.md").is_none(),
+            "the index is not in its own scope"
+        );
+
+        // With no document in hand there is no workspace-wide declaration to
+        // read, so the field is absent — the answer there was before prov could
+        // scope a field, and still the right one for a caller with no document.
+        assert!(
+            view.content_schema()
+                .rule_for(&[Seg::Key("status".into())])
+                .is_none()
+        );
+        assert!(view.vocabularies().unscoped(view.config()).is_empty());
+
+        // Opening through the view is the same answer, so an editor gets the
+        // picker without asking.
+        let task = view.open_document("tasks/fix.md").unwrap();
+        let schema = task.metadata().schema().expect("a content schema");
+        assert!(
+            schema
+                .rule_for(&[Seg::Key("status".into())])
+                .is_some_and(|r| r.constraint.is_some())
         );
     }
 

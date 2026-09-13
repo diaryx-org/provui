@@ -94,6 +94,14 @@ pub struct RelationFacet {
 }
 
 /// A field the workspace declared in `fields.<name>`.
+///
+/// One declaration's worth: the workspace-wide one when the field has it, else
+/// the first of its scoped ones. A field prov 0.12 declares only `under:`
+/// indexes is still a declared field to every document — prov reads it in some
+/// region — and which declaration governs a given document, or whether any
+/// does, is [`prov::workspace::FieldScopes`]' question, asked by
+/// [`WorkspaceView::schema_for`](crate::WorkspaceView::schema_for) and not
+/// here. Classification is per workspace; the schema is per document.
 #[derive(Debug, Clone)]
 pub struct FieldFacet {
     /// The frontmatter key.
@@ -107,6 +115,11 @@ pub struct FieldFacet {
     /// flat store — in which case its terms are ordinary content, reachable
     /// down the spanning tree as well as through this pointer.
     pub reify: bool,
+    /// The index this declaration is scoped under, as written in the config —
+    /// `None` for the declaration that governs the whole workspace. `Some`
+    /// says the facet describes one region's declaration and the field may
+    /// have others.
+    pub under: Option<String>,
 }
 
 /// What a frontmatter key is to prov.
@@ -241,10 +254,16 @@ impl Facets {
                 relation_facet(relation, &relations, config),
             );
         }
-        // The workspace-wide declaration of each field; see
-        // `schema::workspace_fields` for what a scoped one is to this crate.
-        let fields = crate::schema::workspace_fields(config)
-            .map(|(name, spec)| (name.clone(), field_facet(name, spec)))
+        // Every declared field, described by its workspace-wide declaration
+        // when it has one and its first scoped declaration otherwise: a field
+        // declared only under indexes is one prov reads, somewhere.
+        let fields = config
+            .fields
+            .iter()
+            .filter_map(|(name, declarations)| {
+                let spec = config.field(name).or_else(|| declarations.first())?;
+                Some((name.clone(), field_facet(name, spec)))
+            })
             .collect();
         Self {
             relations,
@@ -412,6 +431,7 @@ fn field_facet(name: &str, spec: &FieldSpec) -> FieldFacet {
         vocabulary: spec.vocabulary.clone(),
         values: spec.values,
         reify: spec.reify,
+        under: spec.under.clone(),
     }
 }
 
@@ -610,6 +630,29 @@ content_hash: sha256-abc
         }
         match facets.of_key("created") {
             Facet::Field(field) => assert!(field.vocabulary.is_none()),
+            other => panic!("expected a declared field, got {other:?}"),
+        }
+    }
+
+    /// A field declared only under indexes is still a declared field — prov
+    /// reads it somewhere — and the facet says which region it describes.
+    #[test]
+    fn a_field_declared_only_under_indexes_is_still_a_declared_field() {
+        let mut config = workspace();
+        config.fields.insert(
+            "status".to_string(),
+            vec![FieldSpec {
+                ty: None,
+                values: OpenClosed::Closed,
+                vocabulary: Some("task-statuses.yaml".to_string()),
+                reify: false,
+                default: None,
+                under: Some("[[Tasks]]".to_string()),
+            }],
+        );
+        let facets = Facets::from_config(&config);
+        match facets.of_key("status") {
+            Facet::Field(field) => assert_eq!(field.under.as_deref(), Some("[[Tasks]]")),
             other => panic!("expected a declared field, got {other:?}"),
         }
     }

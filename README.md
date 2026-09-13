@@ -42,6 +42,11 @@ handling and nothing else.
   a generic `flower_core::Schema` for the workspace's *content* documents. This
   is where prov's controlled vocabularies and its spanning relation reach the
   UI, so a frontend renders term pickers and link widgets instead of text boxes.
+  **`schema_for_document`** is the same adapter for one document in particular:
+  prov 0.12 lets a field be declared several times, each `under:` an index, so
+  which `status` a document gets — a task's terms, a proposal's, or none — is a
+  fact about where it sits, and `WorkspaceView::schema_for` answers it per
+  document.
 - **`config_schema`** — the same trick turned on the config document itself. A
   prov config is a document, and flower can already render, type-direct and
   validate any prov document; the only thing missing was a schema saying that

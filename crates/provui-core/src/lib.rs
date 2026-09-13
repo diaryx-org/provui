@@ -21,7 +21,9 @@
 //!   [`WorkspaceConfig`](prov::config::WorkspaceConfig) (+ its vocabularies) into a
 //!   generic [`flower_core::Schema`] for the workspace's **content** documents.
 //!   This is where prov's controlled vocabularies and spanning relation reach the
-//!   UI.
+//!   UI. [`schema_for_document`] is the same adapter for one document: a field
+//!   prov declares `under:` an index governs only the documents below it, so
+//!   which declaration a document is edited under is a fact about where it sits.
 //! - [`config_schema()`] — the same trick turned on the config document itself, so
 //!   the metadata editor a frontend already ships can edit a workspace's policy
 //!   instead of a hand-written settings form.
@@ -68,7 +70,7 @@ pub mod workspace;
 pub use config_schema::{CONFIG_READONLY_KEYS, config_schema};
 pub use facets::{Facet, Facets};
 pub use links::{MetaLink, TargetKind, link_at, links_in, links_under};
-pub use schema::schema_from_config;
+pub use schema::{Vocabularies, schema_for_document, schema_from_config};
 pub use session::{DocumentSession, SessionError};
 pub use workspace::{Destination, WorkspaceView};
 
