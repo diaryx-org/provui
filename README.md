@@ -359,12 +359,12 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-**`provui-tui` additionally needs the two widget crates, which are not on
-crates.io yet.** They are consumed the prepublication way — by the version each
-repo declares, with a `[patch.crates-io]` supplying it — so that no manifest here
-carries a path across a repository boundary and nothing has to be undone to
-publish. In this working tree that patch is `~/diaryx/.cargo/config.toml`, copied
-from `~/diaryx/.cargo/patches.toml` with four entries uncommented:
+Everything here is consumed from crates.io by version, `leaf-ratatui` and
+`flower-ratatui` included; no manifest carries a path across a repository
+boundary, so nothing has to be undone to publish. To build against a *checkout*
+of leaf or flower instead — for a widget change that is not on the registry
+yet — turn on the `[patch.crates-io]` in `~/diaryx/.cargo/config.toml`, copied
+from `~/diaryx/.cargo/patches.toml`, with four entries uncommented:
 
 ```toml
 leaf-core      = { path = "leaf/crates/leaf-core" }
@@ -379,9 +379,21 @@ only the widget leaves the graph holding two copies of that core — a registry 
 under `provui-core` and a path one under the widget — and `Model` and `Doc` stop
 being the same type across the two. It surfaces as a baffling type error rather
 than as anything mentioning duplicate crates. `cargo tree -i leaf-core` should
-show exactly one.
+show exactly one. The patch must be off again before any publish: `cargo
+publish` verifies by building, and would build against it.
 
-`provui-core` alone needs none of this: it depends only on published crates.
+### CI and releasing
+
+`cargo xtask ci` runs what CI runs, in the same order — format, clippy, tests,
+docs, `provui-core` checked on its own, and the MSRV — and `cargo xtask <job>`
+runs one. `.github/workflows/ci.yml` reads the job list from `cargo xtask
+ci-matrix`, so a job is added or renamed in `xtask/src/main.rs` and nowhere
+else.
+
+Releases are cut with the org's shared tooling — `dx release <spec>` bumps,
+regenerates [`docs/CHANGELOG.md`](docs/CHANGELOG.md), commits and tags, and
+pushing the tag runs `publish.yml`, which uploads `provui-core`. `provui-tui` is
+`publish = false` and stays in the checkout; its manifest says why.
 
 ## License
 
