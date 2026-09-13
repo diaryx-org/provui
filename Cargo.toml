@@ -10,6 +10,9 @@ members = [
   # binary linking one copy of each library, so the composition is exercised
   # under a real event loop before any FFI is written.
   "crates/provui-tui",
+  # This repo's CI, as a program: `cargo xtask <job>` runs one job and
+  # `cargo xtask ci` runs them all, in the order `.github/workflows/ci.yml` does.
+  "xtask",
 ]
 
 [workspace.package]

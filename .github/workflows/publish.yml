@@ -1,0 +1,65 @@
+name: Publish
+# Publish the workspace's publishable crate to crates.io on a version tag. One
+# `dx release <spec> --push` cuts the tag that fires this.
+#
+# As in ci.yml, this file holds no knowledge of the workspace: which crates go up
+# and in what order is `cargo publish --workspace`, which reads both off the
+# manifests — `publish = false` members are skipped, and the uploads are ordered
+# so nothing goes up before something it depends on. Today that is `provui-core`
+# alone; `provui-tui` and `xtask` are `publish = false`. A crate that drops that
+# line is published by the next tag with no edit here, and `--workspace` is also
+# what makes such a crate buildable at all on the release that adds it: it
+# verifies against the versions going up beside it, where
+# `cargo publish -p <new-crate>` would resolve `provui-core` from the index and
+# compile against the last release instead.
+#
+# `cargo publish --workspace` has no way to skip a version already on the index.
+# So a re-run of a tag that fully published fails on the first crate, and a run
+# that died partway is finished by naming what already went up
+# (`cargo publish --workspace --exclude provui-core`), which is a
+# `workflow_dispatch` of this file with that line edited in, or the same command
+# from a checkout of the tag.
+#
+# Zig, as in CI: `cargo publish` runs a verification build, and everything under
+# provui reaches `fig` and `twig`, which are Zig-backed (their build.rs runs
+# `zig build`), so the pinned toolchain must be on PATH. Version mirrors ci.yml.
+#
+# Auth is the `CARGO_REGISTRY_TOKEN` secret, as in fig, twig, moid, prov and
+# flower. It must carry `publish-update` for every release, and `publish-new`
+# for any release that adds a crate. Keep it unrestricted by crate, or it cannot
+# create the next one. Setting or rotating it is a repo-settings edit
+# (`gh secret set CARGO_REGISTRY_TOKEN`) and nothing here changes.
+on:
+  push: { tags: [v*.*.*] }
+  workflow_dispatch: null
+permissions:
+  contents: read
+jobs:
+  crates-io:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+    - uses: dtolnay/rust-toolchain@stable
+    - uses: mlugg/setup-zig@v2
+      with: { version: "0.16.0" }
+    - uses: Swatinem/rust-cache@v2
+
+    # On a tag, the tag must name the version being published — refuse a
+    # mismatch rather than publish a surprise. (workflow_dispatch has no tag, so
+    # the guard is skipped there.)
+    - name: Check the tag against the workspace version
+      if: github.ref_type == 'tag'
+      run: |
+        version=$(cargo metadata --no-deps --format-version 1 \
+          | jq -r '.packages[] | select(.name == "provui-core") | .version')
+        echo "Workspace version: $version"
+        if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+          echo "::error::tag ${GITHUB_REF_NAME} does not match workspace version ${version}"
+          exit 1
+        fi
+
+    - name: Publish every publishable crate, in dependency order
+      env:
+        CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      run: cargo publish --workspace

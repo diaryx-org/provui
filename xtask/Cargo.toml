@@ -1,0 +1,13 @@
+[package]
+name = "xtask"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# This repo's CI, as a program. Dependency-free on purpose: the `plan` job in
+# `.github/workflows/ci.yml` compiles this and nothing else, so asking what CI
+# consists of costs one small build and no toolchain beyond stable Rust.
+
+[dependencies]
