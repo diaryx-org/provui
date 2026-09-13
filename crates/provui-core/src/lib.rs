@@ -9,7 +9,7 @@
 //!
 //! - [`ProvBackend`] — a [`flower_core::Backend`] that edits a prov document's
 //!   embedded metadata through prov's carrier-aware
-//!   [`MetaEditor`](prov::edit::MetaEditor). Lossless: comments, key order, the
+//!   [`prov::edit::MetaEditor`]. Lossless: comments, key order, the
 //!   carrier/format, and the prose body are all preserved. Unlike
 //!   [`flower_core::FigBackend`] (a standalone config file, schema-free), a
 //!   `ProvBackend` can carry the workspace **schema** — the controlled
@@ -22,7 +22,7 @@
 //!   generic [`flower_core::Schema`] for the workspace's **content** documents.
 //!   This is where prov's controlled vocabularies and spanning relation reach the
 //!   UI.
-//! - [`config_schema`] — the same trick turned on the config document itself, so
+//! - [`config_schema()`] — the same trick turned on the config document itself, so
 //!   the metadata editor a frontend already ships can edit a workspace's policy
 //!   instead of a hand-written settings form.
 //! - [`facets`] — what each frontmatter key *is* to prov: a relation, a pointer

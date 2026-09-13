@@ -1,4 +1,4 @@
-//! The rule builders [`config_schema`](crate::config_schema) is written in.
+//! The rule builders [`config_schema`](crate::config_schema()) is written in.
 //!
 //! Public, and deliberately so. A [`Schema`](flower_core::Schema) resolves a
 //! path by **first match wins** (`rule_for` returns the first rule whose pattern

@@ -10,7 +10,7 @@
 //! [`WorkspaceView`] is prov's read surface with the pieces an editor needs
 //! resolved once and kept: the effective config, the vocabularies its controlled
 //! fields point at, the [`Facets`] its vocabulary implies, and the
-//! [`Schema`](flower_core::Schema) a content document is edited under. It is a
+//! [`flower_core::Schema`] a content document is edited under. It is a
 //! *view* — the name is the promise. Nothing here writes.
 //!
 //! ## Read-only, and why that is not a temporary state
@@ -26,7 +26,7 @@
 //! prov's read surface is async over a filesystem port. Nothing here is, because
 //! an editor's "open the document under the cursor" is a foreground action with
 //! nothing to overlap: each entry point blocks with prov's own
-//! [`block_on`](prov::block_on), which is the same executor prov's CLI uses.
+//! [`prov::block_on`], which is the same executor prov's CLI uses.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

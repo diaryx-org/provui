@@ -25,7 +25,7 @@
 //!   field of the same name shadows them.
 //!
 //! For the *config* document rather than the content documents, see
-//! [`crate::config_schema`].
+//! [`crate::config_schema`](mod@crate::config_schema).
 
 use std::collections::BTreeMap;
 
