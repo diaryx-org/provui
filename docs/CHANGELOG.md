@@ -28,7 +28,21 @@ release on goes up through `publish.yml`.
 
 <!-- git-cliff:begin — generated; edits here are overwritten -->
 
-_No commits since the last tag._
+### Breaking
+
+- **core** — move to fig 4, and read and edit comments through ProvBackend ([`fec227e`](https://github.com/diaryx-org/provui/commit/fec227e47880f193c84e255e974ab65813d24246))
+
+### Behavioural changes
+
+- provui-core now requires `fig = "4"` and a prov and
+flower-core built on it. A consumer still pinned to fig 3.x resolves two
+copies of fig, and its `fig::Value` stops being provui-core's; move the
+consumer's own pin to 4 alongside.
+
+- a page over a `ProvBackend` now carries each node's
+leading and trailing comment, where every row used to report none; a
+frontend that rendered the comment column only for `FigBackend` documents
+sees it fill in for prov documents too.
 
 <!-- git-cliff:end -->
 
