@@ -33,7 +33,7 @@ prov = "0.12"
 # The Zig-backed config AST + lossless editor prov and flower are both built on.
 # Named directly because `ProvBackend` reaches for `fig::Embed::replace_body` and
 # `fig::Value`, which are the tree and the splice both halves agree on.
-fig = "3.1"
+fig = "4"
 # The generic structural metadata editor. `ProvBackend` is an implementation of
 # its `Backend` trait; nothing here is upstreamed into it, because flower-core
 # does not know the word "prov" and should not learn it.

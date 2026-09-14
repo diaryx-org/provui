@@ -84,6 +84,29 @@ fn be(e: impl std::fmt::Display) -> BackendError {
     BackendError(e.to_string())
 }
 
+/// Run one expression against whichever fig editor sits behind a
+/// [`MetaEditor`]. The fenced and whole-file editors share every comment
+/// method by name and signature without sharing a trait, so a comment op is
+/// one body written once and matched into both arms.
+macro_rules! with_fig {
+    ($editor:expr, |$e:ident| $body:expr) => {
+        match $editor {
+            MetaEditor::Fenced($e) => $body,
+            MetaEditor::Whole($e) => $body,
+        }
+    };
+}
+
+/// A comment read is an answer, not a failure, on a format with no comment
+/// syntax: a page over JSON frontmatter has no comments on it, rather than a
+/// read error on every row. A write to such a format still refuses.
+fn comment_read(read: Result<Option<String>, fig::Error>) -> Result<Option<String>, BackendError> {
+    match read {
+        Err(fig::Error::UnsupportedFormat) => Ok(None),
+        other => other.map_err(be),
+    }
+}
+
 /// A backend over a single prov document, editing its embedded metadata.
 pub struct ProvBackend {
     /// The document path — drives carrier/format detection (extension for a
@@ -132,6 +155,17 @@ impl ProvBackend {
 
     fn document(&self) -> Result<Document, BackendError> {
         Document::parse(&self.path, &self.text).map_err(be)
+    }
+
+    /// An editor over the metadata block as it stands, for a read — `None` when
+    /// the document has no block, which is a document with no comments on it.
+    /// (`apply` opens with `open_or_init` instead, since an edit to a block-less
+    /// document synthesizes one.)
+    fn editor(&self) -> Result<Option<MetaEditor>, BackendError> {
+        match self.document()?.carrier {
+            Some(carrier) => MetaEditor::open(&self.text, carrier).map(Some).map_err(be),
+            None => Ok(None),
+        }
     }
 
     /// The prose body outside the metadata block — the region a `leaf` editor
@@ -226,6 +260,27 @@ impl Backend for ProvBackend {
             EditOp::RenameKey { path, new_key } => {
                 editor.replace_key(&to_fig(&path), &new_key).map_err(be)?
             }
+            // `MetaEditor` stops at the value ops prov's own mutations need; the
+            // comment surface is fig's, reached through whichever editor is
+            // behind it. Two fig calls for a leading set, and still atomic: the
+            // text is only replaced once every call has succeeded, so a refused
+            // add after a delete leaves the document as it was.
+            EditOp::SetLeadingComment { path, text } => {
+                let path = to_fig(&path);
+                with_fig!(&mut editor, |e| {
+                    e.delete_leading_comments(&path).map_err(be)?;
+                    if let Some(text) = &text {
+                        e.add_leading_comment(&path, text).map_err(be)?;
+                    }
+                })
+            }
+            EditOp::SetTrailingComment { path, text } => {
+                let path = to_fig(&path);
+                with_fig!(&mut editor, |e| match &text {
+                    Some(text) => e.set_trailing_comment(&path, text).map_err(be)?,
+                    None => e.delete_trailing_comment(&path).map_err(be)?,
+                })
+            }
         }
 
         self.text = editor.render().map_err(be)?;
@@ -243,6 +298,22 @@ impl Backend for ProvBackend {
 
     fn schema(&self) -> Option<Schema> {
         self.schema.clone()
+    }
+
+    fn leading_comment(&self, path: &[Seg]) -> Result<Option<String>, BackendError> {
+        let Some(editor) = self.editor()? else {
+            return Ok(None);
+        };
+        let path = to_fig(path);
+        comment_read(with_fig!(&editor, |e| e.leading_comment(&path)))
+    }
+
+    fn trailing_comment(&self, path: &[Seg]) -> Result<Option<String>, BackendError> {
+        let Some(editor) = self.editor()? else {
+            return Ok(None);
+        };
+        let path = to_fig(path);
+        comment_read(with_fig!(&editor, |e| e.trailing_comment(&path)))
     }
 }
 
@@ -372,6 +443,89 @@ Body prose.
         assert!(!out.contains("draft:"), "key removed:\n{out}");
         assert!(out.contains("title: Old Title"), "siblings kept:\n{out}");
         assert!(out.contains("Body prose"), "body kept:\n{out}");
+    }
+
+    #[test]
+    fn comments_are_read_per_node_and_edited_in_place_leaving_the_body_alone() {
+        let backend = ProvBackend::open("note.md", DOC).expect("open");
+        let mut model = Model::new(backend).expect("model");
+        let title = [Seg::Key("title".into())];
+        let draft = [Seg::Key("draft".into())];
+
+        // The block above `title` is read through the backend, into the page.
+        assert_eq!(
+            model.leading_comment_at(&title).as_deref(),
+            Some("the title")
+        );
+        assert_eq!(model.leading_comment_at(&draft), None);
+        assert_eq!(model.trailing_comment_at(&title), None);
+
+        model.set_leading_comment(&title, Some("what it is called"));
+        model.set_trailing_comment(&draft, Some("for now"));
+        let out = model.source_snapshot();
+        assert!(
+            out.contains("# what it is called\ntitle: Old Title"),
+            "{out}"
+        );
+        assert!(
+            !out.contains("# the title"),
+            "the block is replaced:\n{out}"
+        );
+        assert!(out.contains("draft: true # for now"), "{out}");
+        assert!(
+            out.contains("Body prose that must survive"),
+            "body kept:\n{out}"
+        );
+
+        model.set_leading_comment(&title, None);
+        let out = model.source_snapshot();
+        assert!(out.starts_with("---\ntitle: Old Title"), "{out}");
+    }
+
+    #[test]
+    fn a_comment_write_that_fig_refuses_leaves_the_document_as_it_was() {
+        let mut backend = ProvBackend::open("note.md", DOC).expect("open");
+        let before = backend.source().unwrap();
+        // A trailing comment is one line; a second line is refused whole, and
+        // the text is not replaced by a partial edit.
+        let result = backend.apply(EditOp::SetTrailingComment {
+            path: vec![Seg::Key("title".into())],
+            text: Some("two\nlines".into()),
+        });
+        assert!(result.is_err());
+        assert_eq!(backend.source().unwrap(), before);
+    }
+
+    #[test]
+    fn json_frontmatter_has_no_comments_to_read_and_refuses_to_write_one() {
+        // `;;;` is the JSON frontmatter fence; `---` around `{…}` would be
+        // YAML, which a `{…}` is a flow mapping of, and which has comments.
+        let doc = ";;;\n{\"title\": \"Note\"}\n;;;\n# Note\n";
+        let mut backend = ProvBackend::open("note.md", doc).expect("open");
+        let title = vec![Seg::Key("title".into())];
+        assert_eq!(backend.leading_comment(&title).unwrap(), None);
+        assert_eq!(backend.trailing_comment(&title).unwrap(), None);
+        let before = backend.source().unwrap();
+        assert!(
+            backend
+                .apply(EditOp::SetLeadingComment {
+                    path: title,
+                    text: Some("nope".into()),
+                })
+                .is_err()
+        );
+        assert_eq!(backend.source().unwrap(), before);
+    }
+
+    #[test]
+    fn a_document_with_no_metadata_block_has_no_comments() {
+        let backend = ProvBackend::open("note.md", "# Just prose\n").expect("open");
+        assert_eq!(
+            backend
+                .leading_comment(&[Seg::Key("title".into())])
+                .unwrap(),
+            None
+        );
     }
 
     #[test]
