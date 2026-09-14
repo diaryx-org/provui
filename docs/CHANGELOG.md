@@ -28,6 +28,12 @@ release on goes up through `publish.yml`.
 
 <!-- git-cliff:begin — generated; edits here are overwritten -->
 
+_No commits since the last tag._
+
+<!-- git-cliff:end -->
+
+## v0.3.0 — 2026-09-14
+
 ### Breaking
 
 - **core** — move to fig 4, and read and edit comments through ProvBackend ([`fec227e`](https://github.com/diaryx-org/provui/commit/fec227e47880f193c84e255e974ab65813d24246))
@@ -44,7 +50,6 @@ leading and trailing comment, where every row used to report none; a
 frontend that rendered the comment column only for `FigBackend` documents
 sees it fill in for prov documents too.
 
-<!-- git-cliff:end -->
 
 ## v0.2.0 — 2026-09-12
 
