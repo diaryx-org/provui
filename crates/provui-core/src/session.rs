@@ -34,6 +34,7 @@ use prov::{Document, MetaCarrier};
 
 use crate::ProvBackend;
 use crate::body_links::BodyLink;
+use crate::findings::{Finding, Site};
 
 /// The answer for a document whose metadata block does not resolve — a `&Value`
 /// to hand back without an allocation or an `Option` every caller would unwrap
@@ -85,6 +86,12 @@ pub struct DocumentSession {
     has_body: bool,
     /// The body text as of the last open/save, for dirty tracking.
     saved_body: String,
+    /// The findings most recently handed to
+    /// [`apply_findings`](DocumentSession::apply_findings). Kept because the
+    /// body half of them becomes leaf highlights the widget draws by itself,
+    /// while the metadata half has nowhere to go yet — see
+    /// [`meta_findings`](DocumentSession::meta_findings).
+    findings: Vec<Finding>,
 }
 
 /// The grammar a document's body is written in, from its path.
@@ -204,6 +211,7 @@ impl DocumentSession {
             body,
             has_body,
             saved_body,
+            findings: Vec::new(),
         })
     }
 
@@ -358,6 +366,68 @@ impl DocumentSession {
     /// a UI/FFI issues (vs. driving the selection).
     pub fn set_metadata(&mut self, path: &[Seg], value: Value) {
         self.metadata.set_value_at(path, value);
+    }
+
+    /// Take on a set of findings: wash the body ones under the text they are
+    /// about, and hold the rest for the host to read.
+    ///
+    /// **The highlight list is owned by this call.** leaf's
+    /// [`set_highlights`](leaf_core::Doc::set_highlights) replaces the whole
+    /// set rather than adding to it — deliberately, so the host and the
+    /// document can never disagree about what is on screen — so there is no way
+    /// to "clear the finding highlights and keep the others". A session whose
+    /// findings are being applied is a session whose body highlights are the
+    /// findings; a host that also wants search hits or annotations in the body
+    /// composes its own list and calls leaf directly instead of calling this.
+    ///
+    /// Each highlight's `id` is the finding's [`kind`](Finding::kind), which is
+    /// what leaf hands back when a reader activates one, and its `marker` is
+    /// `"finding"` — the name is opaque to leaf, and a frontend reads it as
+    /// whatever glyph it draws in the margin.
+    ///
+    /// The metadata half stops at "available to the host". flower-core 0.5 has
+    /// no per-row annotation, so there is nothing to hand it: a frontend draws
+    /// the message itself, against the path in [`Site::Meta`].
+    // TODO(flower): per-row findings. The flower side is being added upstream;
+    // when a `Model` can carry an annotation per row, this should push the
+    // metadata half into it the way it pushes the body half into leaf, and
+    // `meta_findings` becomes the escape hatch rather than the only door.
+    pub fn apply_findings(&mut self, findings: &[Finding]) {
+        let highlights = findings
+            .iter()
+            .filter_map(|finding| match &finding.site {
+                Site::Body(span) => Some(leaf_core::Highlight {
+                    start: span.start,
+                    end: span.end,
+                    id: finding.kind.to_string(),
+                    color: None,
+                    marker: Some("finding".to_string()),
+                }),
+                _ => None,
+            })
+            .collect();
+        self.body.set_highlights(highlights);
+        self.findings = findings.to_vec();
+    }
+
+    /// Every finding [`apply_findings`](Self::apply_findings) was last given.
+    pub fn findings(&self) -> &[Finding] {
+        &self.findings
+    }
+
+    /// The findings that sit in the **metadata** — the half no widget draws for
+    /// you. See [`apply_findings`](Self::apply_findings).
+    pub fn meta_findings(&self) -> impl Iterator<Item = &Finding> {
+        self.findings
+            .iter()
+            .filter(|f| matches!(f.site, Site::Meta(_)))
+    }
+
+    /// The finding sitting at metadata `path`, if there is one — the question a
+    /// status line asks about the row under the cursor.
+    pub fn meta_finding_at(&self, path: &[Seg]) -> Option<&Finding> {
+        self.meta_findings()
+            .find(|f| matches!(&f.site, Site::Meta(at) if at == path))
     }
 
     /// `true` if the metadata or the body has unsaved edits.

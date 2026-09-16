@@ -262,6 +262,26 @@ fn screen(terminal: &DefaultTerminal) -> Result<Rect> {
     Ok(Rect::new(0, 0, size.width, size.height))
 }
 
+/// Ask the workspace what is wrong with the document and hand the answer to the
+/// session, which washes the body half under the prose and holds the rest.
+///
+/// Run on open and after every save, and nowhere else. It is a walk from the
+/// document — cheap for a note, proportional to the subtree for an index — so
+/// it belongs at the two moments the document's structure actually changed, not
+/// on a keystroke or a frame.
+fn refresh_findings(session: &mut DocumentSession, app: &mut App) {
+    match app.nav.findings(session.path()) {
+        Ok(findings) => session.apply_findings(&findings),
+        // A check that cannot run is not a document that cannot be edited.
+        // Clearing first so a stale wash from the last document never outlives
+        // the answer it came from.
+        Err(e) => {
+            session.apply_findings(&[]);
+            app.status = Some(format!("check failed: {e}"));
+        }
+    }
+}
+
 /// Put the metadata model in the shape the widget draws before anything draws or
 /// types. Shared with the tests, which drive the same keys without a terminal.
 fn begin(session: &mut DocumentSession, app: &App, screen: Rect) {
@@ -275,6 +295,7 @@ fn begin(session: &mut DocumentSession, app: &App, screen: Rect) {
 
 fn run(terminal: &mut DefaultTerminal, session: &mut DocumentSession, app: &mut App) -> Result<()> {
     begin(session, app, screen(terminal)?);
+    refresh_findings(session, app);
 
     loop {
         // How much a page inlines is a fact about the room it has, and the room
@@ -389,7 +410,18 @@ fn save(session: &mut DocumentSession, app: &mut App) {
     // dirtiness for the document as a whole is the session's answer to give.
     match session.save() {
         Ok(()) => app.status = Some(format!("saved {}", app.name)),
-        Err(e) => app.status = Some(format!("save failed: {e}")),
+        Err(e) => {
+            app.status = Some(format!("save failed: {e}"));
+            return;
+        }
+    }
+    // The bytes on disk are what prov checks, so the check runs after the
+    // write and not before it — a save is exactly when a link that was being
+    // typed stops being half-written.
+    let saved = std::mem::take(&mut app.status);
+    refresh_findings(session, app);
+    if app.status.is_none() {
+        app.status = saved;
     }
 }
 
@@ -522,6 +554,7 @@ fn arrive(session: &mut DocumentSession, app: &mut App, screen: Rect) {
     // The same preparation the first document got: a fresh model is in the row
     // projection, not the page one, and has not skipped its lone drill row.
     begin(session, app, screen);
+    refresh_findings(session, app);
     app.status = Some(format!("{} · {BACK_CHORD} back", app.name));
 }
 
@@ -1014,6 +1047,62 @@ Original body.
         );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// The findings channel, end to end in the host: run on open, counted in
+    /// the status line, and shown in full when the metadata cursor reaches the
+    /// row the finding is about.
+    ///
+    /// `Nav::discover` rather than `Nav::none`, because there are no findings
+    /// without a workspace to check against — which is the one thing this test
+    /// needs the real filesystem for.
+    #[test]
+    fn findings_are_run_on_open_and_reported_where_they_belong() {
+        let dir = std::env::temp_dir().join("provui_tui_findings");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("README.md"),
+            "---\ntitle: The Vault\ncontents:\n- '[A Note](note.md)'\n---\n# The Vault\n",
+        )
+        .unwrap();
+        let note = dir.join("note.md");
+        std::fs::write(
+            &note,
+            "---\ntitle: A Note\npart_of: '[Nowhere](/nowhere.md)'\n---\n# A Note\n\nSee [the missing one](gone.md).\n",
+        )
+        .unwrap();
+
+        let nav = nav::Nav::discover(&note);
+        assert!(nav.has_workspace(), "the vault was found");
+        let mut session = nav.open(&note).unwrap();
+        let mut app = App::new(&session, nav);
+        begin(&mut session, &app, SCREEN);
+        refresh_findings(&mut session, &mut app);
+
+        assert_eq!(session.findings().len(), 2, "{:#?}", session.findings());
+        // The body half is leaf's to draw, and it has it.
+        assert_eq!(session.body().highlights().len(), 1);
+
+        let drawn = |session: &mut DocumentSession, app: &mut App| {
+            let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+            terminal.draw(|f| ui::draw(f, app, session)).unwrap();
+            format!("{}", terminal.backend())
+        };
+        app.status = None;
+        assert!(
+            drawn(&mut session, &mut app).contains("2 findings"),
+            "the count is on the line"
+        );
+
+        // Standing on the row the finding is about replaces the hints with what
+        // is wrong with it.
+        stand_on(&mut session, &mut app, "part_of");
+        app.status = None;
+        let line = drawn(&mut session, &mut app);
+        assert!(line.contains("broken part_of link"), "{line}");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Following is a *reading* gesture, so unlike quitting it has no

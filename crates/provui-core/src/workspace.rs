@@ -40,6 +40,7 @@ use prov::{
 };
 
 use crate::facets::Facets;
+use crate::findings::Finding;
 use crate::links::AnyLink;
 use crate::schema::Vocabularies;
 use crate::session::{DocumentSession, SessionError};
@@ -418,6 +419,60 @@ impl WorkspaceView {
             .unwrap_or_else(|| prov::link::path_to_title(rel))
     }
 
+    /// What prov's integrity check says about `doc`, placed where an editor can
+    /// draw it.
+    ///
+    /// ## What it costs
+    ///
+    /// [`Workspace::check`](prov::Workspace::check) is **reachability-bounded**:
+    /// it walks from the document it is given and reports on what that walk
+    /// reaches. Starting it at the document itself is therefore the cheap
+    /// per-document check — for a leaf note with no `contents` it loads one
+    /// document and censuses its links, which is the price of a save. It is not
+    /// free for every document: run on an index, it walks the subtree under it,
+    /// and run on the workspace root it walks the workspace. A frontend that
+    /// wants this after every keystroke should not have it; after a save, which
+    /// is what `provui-tui` does, it is proportional to what the document
+    /// contains.
+    ///
+    /// The bound is also why the answer is narrower than `prov check` on the
+    /// whole workspace: a finding lodged against *this* document by a walk that
+    /// started somewhere else — a parent reporting that this document does not
+    /// link back — is not reachable from here and does not appear. What does
+    /// appear is everything this document declares.
+    ///
+    /// Findings about other documents the walk reached are filtered out:
+    /// [`subject`](prov::Finding::subject) is prov's own answer to "which file
+    /// would a repair open", and a broken link in `a.md` pointing at `b.md`
+    /// belongs to `a.md`.
+    pub fn findings_for(&self, doc: &Path) -> Result<Vec<Finding>, SessionError> {
+        let rel = self.relative(doc);
+        let found = block_on(self.ws.check(&rel)).map_err(we)?;
+        // Read once, for the relation-name → list-index refinement, and only if
+        // there is something to refine.
+        let links = if found.iter().any(|f| f.subject() == rel) {
+            self.links_of(&rel)
+        } else {
+            Vec::new()
+        };
+        Ok(found
+            .iter()
+            .filter(|f| f.subject() == rel)
+            .map(|f| crate::findings::place(f, &rel, &links))
+            .collect())
+    }
+
+    /// The metadata links a document declares, for placing a finding. An
+    /// unreadable document has none, which is the state a finding about it is
+    /// already reporting.
+    fn links_of(&self, rel: &Path) -> Vec<crate::MetaLink> {
+        block_on(self.ws.read_text(rel))
+            .ok()
+            .and_then(|text| prov::Document::parse(rel, &text).ok())
+            .map(|doc| crate::links_in(&fig::Value::from(&doc.meta), &self.facets))
+            .unwrap_or_default()
+    }
+
     /// Every inbound reference to `target`, walked from the workspace root.
     ///
     /// prov keeps no stored backlink index — this is the census inverted, so it
@@ -684,6 +739,7 @@ fn same_file(a: &Path, b: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::findings::{Severity, Site};
     use crate::links::{MetaLink, links_in};
     use flower_core::Seg;
 
@@ -846,6 +902,99 @@ mod tests {
         assert_eq!(
             reference_here(Some(&view), &session, &vault.path("README.md")),
             "[A Note](/notes/note.md)"
+        );
+    }
+
+    /// prov's check, placed: a broken link in the prose lands on a byte range,
+    /// a broken `part_of` lands on the metadata row that declares it.
+    #[test]
+    fn a_findings_run_places_each_one_in_the_region_it_was_written_in() {
+        let vault = Vault::new("findings");
+        let note = vault.path("notes/note.md");
+        std::fs::write(
+            &note,
+            "---\ntitle: A Note\npart_of: '[Nowhere](/nowhere.md)'\n---\n# A Note\n\nSee [the missing one](gone.md).\n",
+        )
+        .unwrap();
+        let view = WorkspaceView::discover(&note).unwrap().unwrap();
+        let findings = view.findings_for(&note).expect("check");
+
+        let body: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| matches!(f.site, Site::Body(_)))
+            .collect();
+        assert_eq!(body.len(), 1, "one body finding: {findings:#?}");
+        assert_eq!(body[0].kind, "broken_link");
+        assert_eq!(body[0].severity, Severity::Error);
+        let Site::Body(span) = &body[0].site else {
+            unreachable!()
+        };
+        // The span is a range in the *body*, not in the file: it slices the
+        // link back out of the prose leaf is holding.
+        let session = DocumentSession::open(&note).unwrap();
+        assert_eq!(
+            &session.body().source[span.clone()],
+            "[the missing one](gone.md)"
+        );
+
+        let meta: Vec<&Finding> = findings
+            .iter()
+            .filter(|f| matches!(f.site, Site::Meta(_)))
+            .collect();
+        assert_eq!(meta.len(), 1, "one metadata finding: {findings:#?}");
+        assert_eq!(meta[0].kind, "broken_link");
+        assert_eq!(
+            meta[0].site,
+            Site::Meta(vec![Seg::Key("part_of".into())]),
+            "on the row that declares it"
+        );
+        // prov's own sentence, without the path a per-document panel already
+        // knows.
+        assert!(
+            meta[0].message.starts_with("broken part_of link:"),
+            "{:?}",
+            meta[0].message
+        );
+    }
+
+    /// Applying findings washes the body ones under the text, and leaves the
+    /// metadata ones for the host to draw.
+    #[test]
+    fn applying_findings_highlights_the_body_and_holds_the_rest() {
+        let vault = Vault::new("apply_findings");
+        let note = vault.path("notes/note.md");
+        std::fs::write(
+            &note,
+            "---\ntitle: A Note\npart_of: '[Nowhere](/nowhere.md)'\n---\n# A Note\n\nSee [the missing one](gone.md).\n",
+        )
+        .unwrap();
+        let view = WorkspaceView::discover(&note).unwrap().unwrap();
+        let findings = view.findings_for(&note).unwrap();
+
+        let mut session = DocumentSession::open(&note).unwrap();
+        assert!(session.body().highlights().is_empty());
+        session.apply_findings(&findings);
+
+        let highlights = session.body().highlights();
+        assert_eq!(highlights.len(), 1, "the body half, and only it");
+        assert_eq!(highlights[0].id, "broken_link", "the kind is the id");
+        assert_eq!(highlights[0].marker.as_deref(), Some("finding"));
+        assert_eq!(
+            &session.body().source[highlights[0].start..highlights[0].end],
+            "[the missing one](gone.md)"
+        );
+
+        // The metadata half is readable by path, which is how a host puts it
+        // beside the row it belongs to.
+        assert!(
+            session
+                .meta_finding_at(&[Seg::Key("part_of".into())])
+                .is_some()
+        );
+        assert!(
+            session
+                .meta_finding_at(&[Seg::Key("title".into())])
+                .is_none()
         );
     }
 

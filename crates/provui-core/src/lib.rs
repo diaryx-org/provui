@@ -39,6 +39,11 @@
 //!   [`prov::Link`] and a [`TargetKind`], and [`AnyLink`] is what lets one
 //!   resolver answer for both — so following a link from the body caret and
 //!   following one from the metadata cursor are the same code.
+//! - [`findings`] — what prov's integrity check says about one document,
+//!   placed: a broken link becomes a metadata path or a byte range in the body,
+//!   which is a place an editor can draw. prov reports a relation's *name*; this
+//!   recovers the list index where the document's own links make that
+//!   unambiguous, and says so where they do not.
 //! - [`workspace`] — [`WorkspaceView`], which finds the workspace a document
 //!   belongs to and resolves a link to a document you can open. The one piece
 //!   that reads the filesystem, and read-only. It also runs that backwards:
@@ -71,6 +76,7 @@
 pub mod body_links;
 pub mod config_schema;
 pub mod facets;
+pub mod findings;
 pub mod links;
 pub mod rules;
 pub mod schema;
@@ -80,6 +86,7 @@ pub mod workspace;
 pub use body_links::{BodyLink, body_link_at, body_links};
 pub use config_schema::{CONFIG_READONLY_KEYS, config_schema};
 pub use facets::{Facet, Facets};
+pub use findings::{Finding, Severity, Site};
 pub use links::{AnyLink, MetaLink, TargetKind, link_at, links_in, links_under};
 pub use schema::{Vocabularies, schema_for_document, schema_from_config};
 pub use session::{DocumentSession, Heading, SessionError};

@@ -72,6 +72,16 @@ handling and nothing else.
   what that sharing is called: `WorkspaceView::resolve` takes either, so a
   `[[a.md]]` in a paragraph and an `[[a.md]]` in `contents` land in the same
   place by construction rather than by agreement.
+- **`findings`** — what prov's integrity check says about one document, placed
+  where an editor can draw it. prov's `Finding` names the document and, for a
+  link, the *site* — a relation's name, or a byte span in the body. A relation's
+  name is one step short of a place: `contents` is a list, and the broken item is
+  the third one. So this recovers the index by matching the finding's target
+  against the links that key actually holds, which is exact unless the list
+  repeats a target — and where it does, the key alone is the honest answer rather
+  than a guess. prov has no severity of its own; the error/warning split is this
+  crate's, it is a rendering hint that suppresses nothing, and it lives in one
+  list so that a frontend does not grow its own.
 - **`WorkspaceView`** — the step that needs a workspace to take it in. It finds
   the workspace a document belongs to, resolves the effective config and the
   vocabularies it points at, and turns a link into a document you can open —
@@ -95,6 +105,13 @@ writing `part_of` in another, and that is prov's `mutate` layer. The metadata
 backend here edits one document's bytes and has no way to touch a second, which
 is exactly why the line is where it is. A frontend may follow a link with what is
 here and must not conclude it can retarget one.
+
+Producing link *text* is still reading. `WorkspaceView::reference_to` says what
+a link to a document would be spelled like in this workspace, and writes
+nothing — not even the id an id-addressing style would need, since minting one
+is a write: an unregistered target degrades to a path link, which is what prov's
+`format_reference` does when handed no id. What the caller does with the string
+is the caller's business.
 
 Saving writes bytes directly. A frontend that wants fixity and `updated`
 restamping maintained routes the write through prov's `Storage`/`mutate` layer
@@ -324,6 +341,41 @@ escape hatch. Quitting has one because quitting twice discards work you were
 told about and meant to discard; following a link is a *reading* gesture, and an
 edit lost to one would be an edit lost to something nobody thinks of as
 destructive.
+
+### Findings
+
+prov can say what is wrong with a document — a link that resolves to nothing, a
+term outside a closed vocabulary, a child that does not link back — and
+`WorkspaceView::findings_for` runs that check for one document and places each
+answer. **The host runs it on open and after every save**, and nowhere else:
+`Workspace::check` is reachability-bounded, so starting it at the document is
+one document's worth of work for a leaf note and a subtree's worth for an index,
+which is a price worth paying at the two moments the structure actually changed
+and not on a keystroke.
+
+That bound is also why the answer is narrower than `prov check` over the whole
+workspace: a finding lodged against this document by a walk that started
+somewhere else — a parent reporting that this document does not link back — is
+not reachable from here and does not appear. What does appear is everything this
+document declares.
+
+Each half goes where it belongs. **Body findings become leaf highlights**,
+washed under the link they are about — the spans prov reports are already body
+offsets, so nothing converts — and `leaf-ratatui` draws them itself. The
+**status line carries the count**, and shows a metadata finding in full when the
+cursor reaches the row it is about, in place of the standing hints.
+
+The metadata half stops there, and that is upstream's line rather than a
+choice: flower-core 0.5 has no per-row annotation, so there is nothing to hand
+the widget and the host draws the message itself. `session.meta_findings()` is
+the door until there is one; the `TODO(flower)` in `apply_findings` names what
+would replace it.
+
+One consequence of leaf's design is worth stating: `Doc::set_highlights`
+replaces the whole set rather than adding to it — deliberately, so the host and
+the document can never disagree about what is on screen — so `apply_findings`
+**owns** the body's highlight list. A frontend that also wants search hits or
+annotations in the body composes its own list and calls leaf directly.
 
 ### Saving, and what is not here
 

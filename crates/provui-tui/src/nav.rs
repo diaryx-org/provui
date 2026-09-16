@@ -36,7 +36,7 @@ use std::path::{Path, PathBuf};
 use provui_core::facets::Facets;
 use provui_core::links::MetaLink;
 use provui_core::workspace::{Destination, WorkspaceView, resolve_without_workspace};
-use provui_core::{BodyLink, DocumentSession, SessionError, link_at};
+use provui_core::{BodyLink, DocumentSession, Finding, SessionError, link_at};
 
 /// What is under the cursor, when the follow key is pressed.
 ///
@@ -183,6 +183,19 @@ impl Nav {
             None => resolve_without_workspace(session.path(), &link),
         };
         Ok(Follow::BodyLands(Box::new(link), landing))
+    }
+
+    /// What prov's check says about `doc`, placed — empty outside a workspace,
+    /// where there is no structure to check against.
+    ///
+    /// Reachability-bounded from the document itself, which is what makes it
+    /// affordable to run on open and on save; see
+    /// [`WorkspaceView::findings_for`] for what that bound costs and excludes.
+    pub fn findings(&self, doc: &Path) -> Result<Vec<Finding>, SessionError> {
+        match &self.workspace {
+            Some(ws) => ws.findings_for(doc),
+            None => Ok(Vec::new()),
+        }
     }
 
     /// The link text to write to **where the body caret is**, in this

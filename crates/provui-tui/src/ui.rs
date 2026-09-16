@@ -381,20 +381,55 @@ fn status_line(f: &mut Frame, area: Rect, app: &App, session: &DocumentSession) 
         Style::default().fg(Color::Black).bg(Color::Cyan),
     ));
 
+    // A count, not a list: the findings themselves are already *placed* — the
+    // body's are washed under the prose by leaf, and the metadata's are shown
+    // below when the cursor reaches one — so what the line owes a reader here
+    // is only that there is something to go and look at.
+    let findings = session.findings().len();
+    if findings > 0 {
+        spans.push(Span::styled(
+            format!(
+                " ⚠ {findings} finding{}",
+                if findings == 1 { "" } else { "s" }
+            ),
+            Style::default().fg(Color::Red),
+        ));
+    }
+
     // The hints and a message are alternatives rather than neighbours: together
     // they overflow 80 columns, and a `Line` clips on the right — so keeping
     // both would mean losing the end of whichever came last, silently. When
     // there is something to say, saying it is worth more than repeating keys
     // that have not moved.
-    match &app.status {
-        Some(status) => {
+    // Three things want the tail of the line and only one can have it, because
+    // a `Line` clips on the right and would lose whichever came last without
+    // saying so. In order of how much they are worth: what just happened, then
+    // what is wrong with the row under the cursor, then the standing hints —
+    // which are the only one a reader can get back by pressing nothing.
+    let finding = session
+        .cursor_path()
+        .and_then(|path| session.meta_finding_at(&path).cloned());
+    match (&app.status, finding) {
+        (Some(status), _) => {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 format!(" {status} "),
                 Style::default().fg(Color::Black).bg(Color::Green),
             ));
         }
-        None => {
+        (None, Some(finding)) => {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                format!(" {} ", finding.message),
+                Style::default()
+                    .fg(Color::Black)
+                    .bg(match finding.severity {
+                        provui_core::Severity::Error => Color::Red,
+                        provui_core::Severity::Warning => Color::Yellow,
+                    }),
+            ));
+        }
+        (None, None) => {
             let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
             let room = (area.width as usize).saturating_sub(used + 2);
             if let Some(hints) = hints(app.focus, room) {
