@@ -216,7 +216,11 @@ fn park_cursor(f: &mut Frame, metadata: Rect, session: &DocumentSession) {
     let x = match &session.metadata().mode {
         // flower's edit line is a ` edit ` badge, a space, then the buffer.
         Mode::Editing { buffer, .. } => 7 + buffer.chars().count() as u16,
-        Mode::Normal => 0,
+        // The picker puts what has been typed on its own box title and draws a
+        // `›` against the row it is on, so there is no caret of the widget's to
+        // sit on and no box position the host is told. Park it where a normal
+        // page parks it.
+        Mode::Choosing { .. } | Mode::Normal => 0,
     };
     let x = metadata.x + x.min(metadata.width - 1);
     f.set_cursor_position(Position::new(x, metadata.bottom() - 1));
@@ -382,9 +386,9 @@ fn status_line(f: &mut Frame, area: Rect, app: &App, session: &DocumentSession) 
     ));
 
     // A count, not a list: the findings themselves are already *placed* — the
-    // body's are washed under the prose by leaf, and the metadata's are shown
-    // below when the cursor reaches one — so what the line owes a reader here
-    // is only that there is something to go and look at.
+    // body's are washed under the prose by leaf, the metadata's are marked and
+    // spelled out by flower — so what the line owes a reader here is only that
+    // there is something to go and look at.
     let findings = session.findings().len();
     if findings > 0 {
         spans.push(Span::styled(
@@ -401,35 +405,21 @@ fn status_line(f: &mut Frame, area: Rect, app: &App, session: &DocumentSession) 
     // both would mean losing the end of whichever came last, silently. When
     // there is something to say, saying it is worth more than repeating keys
     // that have not moved.
-    // Three things want the tail of the line and only one can have it, because
-    // a `Line` clips on the right and would lose whichever came last without
-    // saying so. In order of how much they are worth: what just happened, then
-    // what is wrong with the row under the cursor, then the standing hints —
-    // which are the only one a reader can get back by pressing nothing.
-    let finding = session
-        .cursor_path()
-        .and_then(|path| session.meta_finding_at(&path).cloned());
-    match (&app.status, finding) {
-        (Some(status), _) => {
+    //
+    // Two things want the tail of the line, not three: what is wrong with the
+    // metadata row under the cursor used to be drawn here, and is now flower's
+    // own — the widget marks the row and puts the message in its footer. What
+    // is left is what just happened, and the standing hints, which are the only
+    // one a reader can get back by pressing nothing.
+    match &app.status {
+        Some(status) => {
             spans.push(Span::raw(" "));
             spans.push(Span::styled(
                 format!(" {status} "),
                 Style::default().fg(Color::Black).bg(Color::Green),
             ));
         }
-        (None, Some(finding)) => {
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                format!(" {} ", finding.message),
-                Style::default()
-                    .fg(Color::Black)
-                    .bg(match finding.severity {
-                        provui_core::Severity::Error => Color::Red,
-                        provui_core::Severity::Warning => Color::Yellow,
-                    }),
-            ));
-        }
-        (None, None) => {
+        None => {
             let used: usize = spans.iter().map(|s| s.content.chars().count()).sum();
             let room = (area.width as usize).saturating_sub(used + 2);
             if let Some(hints) = hints(app.focus, room) {

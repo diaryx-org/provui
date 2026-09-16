@@ -44,6 +44,10 @@
 //!   which is a place an editor can draw. prov reports a relation's *name*; this
 //!   recovers the list index where the document's own links make that
 //!   unambiguous, and says so where they do not.
+//!   [`DocumentSession::apply_findings`] then hands each half to the editor that
+//!   owns it — leaf highlights under the prose, flower
+//!   [`Annotation`](flower_core::Annotation)s on the rows — so both widgets draw
+//!   them without the host drawing anything.
 //! - [`workspace`] — [`WorkspaceView`], which finds the workspace a document
 //!   belongs to and resolves a link to a document you can open. The one piece
 //!   that reads the filesystem, and read-only. It also runs that backwards:
@@ -89,7 +93,7 @@ pub use facets::{Facet, Facets};
 pub use findings::{Finding, Severity, Site};
 pub use links::{AnyLink, MetaLink, TargetKind, link_at, links_in, links_under};
 pub use schema::{Vocabularies, schema_for_document, schema_from_config};
-pub use session::{DocumentSession, Heading, SessionError};
+pub use session::{DocumentSession, Heading, SessionError, annotations_of};
 pub use workspace::{Destination, WorkspaceView, reference_here, reference_without_workspace};
 
 use fig::Value;

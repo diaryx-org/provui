@@ -996,6 +996,35 @@ mod tests {
                 .meta_finding_at(&[Seg::Key("title".into())])
                 .is_none()
         );
+
+        // And it reached the *rows*: flower carries the same finding as an
+        // annotation at the same path, so the widget draws the marker and the
+        // message without the host drawing either.
+        session
+            .metadata_mut()
+            .set_view(flower_core::ViewMode::Pages);
+        let items = &session.metadata().page().items;
+        let part_of = items
+            .iter()
+            .find(|i| i.path == [Seg::Key("part_of".into())])
+            .expect("a row for part_of");
+        let annotation = part_of.annotation.as_ref().expect("marked");
+        assert_eq!(annotation.severity, flower_core::annotate::Severity::Error);
+        assert!(
+            annotation.message.starts_with("broken part_of link:"),
+            "{:?}",
+            annotation.message
+        );
+        let title = items
+            .iter()
+            .find(|i| i.path == [Seg::Key("title".into())])
+            .expect("a row for title");
+        assert!(title.annotation.is_none(), "only the row that is wrong");
+
+        // A fresh list replaces the old one, rows and all — the same ownership
+        // the body's highlights have.
+        session.apply_findings(&[]);
+        assert!(session.metadata().annotations().is_empty());
     }
 
     /// The three answers a follow actually has: a document that is there, a

@@ -28,13 +28,14 @@
 use std::path::{Path, PathBuf};
 
 use fig::Value;
-use flower_core::{Model, Schema, Seg, ViewMode};
+use flower_core::annotate;
+use flower_core::{Annotation, Model, Schema, Seg, ViewMode};
 use leaf_core::{Doc, Format as BodyFormat};
 use prov::{Document, MetaCarrier};
 
 use crate::ProvBackend;
 use crate::body_links::BodyLink;
-use crate::findings::{Finding, Site};
+use crate::findings::{Finding, Severity, Site};
 
 /// The answer for a document whose metadata block does not resolve — a `&Value`
 /// to hand back without an allocation or an `Option` every caller would unwrap
@@ -106,6 +107,30 @@ fn body_format_of(path: &Path) -> BodyFormat {
         Some(prov::ContentFormat::Html) => BodyFormat::Html,
         Some(prov::ContentFormat::Markdown) | None => BodyFormat::Markdown,
     }
+}
+
+/// The metadata half of a finding list, in flower's own vocabulary.
+///
+/// Split out from [`DocumentSession::apply_findings`] because it is the whole
+/// of the translation, and a frontend composing its own annotation list wants
+/// the prov half of it without the ownership.
+pub fn annotations_of(findings: &[Finding]) -> Vec<Annotation> {
+    findings
+        .iter()
+        .filter_map(|finding| {
+            let path = match &finding.site {
+                Site::Meta(path) => path.clone(),
+                // The empty path is flower's "the document".
+                Site::Document => Vec::new(),
+                Site::Body(_) => return None,
+            };
+            let severity = match finding.severity {
+                Severity::Error => annotate::Severity::Error,
+                Severity::Warning => annotate::Severity::Warning,
+            };
+            Some(Annotation::new(path, severity, finding.message.clone()))
+        })
+        .collect()
 }
 
 impl DocumentSession {
@@ -385,13 +410,27 @@ impl DocumentSession {
     /// `"finding"` — the name is opaque to leaf, and a frontend reads it as
     /// whatever glyph it draws in the margin.
     ///
-    /// The metadata half stops at "available to the host". flower-core 0.5 has
-    /// no per-row annotation, so there is nothing to hand it: a frontend draws
-    /// the message itself, against the path in [`Site::Meta`].
-    // TODO(flower): per-row findings. The flower side is being added upstream;
-    // when a `Model` can carry an annotation per row, this should push the
-    // metadata half into it the way it pushes the body half into leaf, and
-    // `meta_findings` becomes the escape hatch rather than the only door.
+    /// **The metadata half is owned the same way**, and by the same argument:
+    /// flower's [`set_annotations`](flower_core::Model::set_annotations)
+    /// replaces the whole set rather than adding to it, so the rows a session's
+    /// findings are applied to carry those findings and nothing else. A host
+    /// with annotations of its own composes the list and calls the model
+    /// directly.
+    ///
+    /// A [`Site::Meta`] finding becomes an [`Annotation`](flower_core::Annotation)
+    /// at the same path — so the row `contents[2]` was narrowed to is the row
+    /// that gets the marker — and a [`Site::Document`] one becomes an annotation
+    /// at the **empty** path, which is flower's spelling for "the document".
+    /// That is deliberately not a row: nothing draws the root, so a finding
+    /// about the file rather than about anything written in it stays the host's
+    /// to report, which is what [`findings`](Self::findings) is for.
+    /// [`Site::Body`] findings go to leaf and nowhere else.
+    ///
+    /// The severity map is total in one direction only: this crate draws two
+    /// levels and flower draws three, so nothing here ever produces
+    /// [`Severity::Info`](flower_core::annotate::Severity::Info). prov has no
+    /// severity at all (see [`crate::findings`]), and inventing a third here
+    /// would be inventing it twice.
     pub fn apply_findings(&mut self, findings: &[Finding]) {
         let highlights = findings
             .iter()
@@ -407,6 +446,7 @@ impl DocumentSession {
             })
             .collect();
         self.body.set_highlights(highlights);
+        self.metadata.set_annotations(annotations_of(findings));
         self.findings = findings.to_vec();
     }
 
@@ -415,16 +455,24 @@ impl DocumentSession {
         &self.findings
     }
 
-    /// The findings that sit in the **metadata** — the half no widget draws for
-    /// you. See [`apply_findings`](Self::apply_findings).
+    /// The findings that sit in the **metadata**.
+    ///
+    /// [`apply_findings`](Self::apply_findings) has already handed these to the
+    /// model as annotations, so a widget over it draws them; this is the same
+    /// half as prov reported it, for a host that wants the `kind` or the
+    /// severity rather than the sentence.
     pub fn meta_findings(&self) -> impl Iterator<Item = &Finding> {
         self.findings
             .iter()
             .filter(|f| matches!(f.site, Site::Meta(_)))
     }
 
-    /// The finding sitting at metadata `path`, if there is one — the question a
-    /// status line asks about the row under the cursor.
+    /// The finding sitting at metadata `path`, if there is one.
+    ///
+    /// Exact, not inherited: a finding on `contents` does not answer for
+    /// `contents[2]`. flower's
+    /// [`annotation_at`](flower_core::Model::annotation_at) is the other
+    /// question and inherits from the nearest annotated ancestor.
     pub fn meta_finding_at(&self, path: &[Seg]) -> Option<&Finding> {
         self.meta_findings()
             .find(|f| matches!(&f.site, Site::Meta(at) if at == path))

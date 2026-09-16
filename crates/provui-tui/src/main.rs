@@ -1050,8 +1050,11 @@ Original body.
     }
 
     /// The findings channel, end to end in the host: run on open, counted in
-    /// the status line, and shown in full when the metadata cursor reaches the
-    /// row the finding is about.
+    /// the status line, and — because the session now hands the metadata half
+    /// to flower as annotations — spelled out by the *widget* when the metadata
+    /// cursor reaches the row the finding is about. The assertion is on what is
+    /// on the screen rather than on which layer drew it, which is what makes it
+    /// the test that the host may stop drawing it.
     ///
     /// `Nav::discover` rather than `Nav::none`, because there are no findings
     /// without a workspace to check against — which is the one thing this test
@@ -1095,8 +1098,9 @@ Original body.
             "the count is on the line"
         );
 
-        // Standing on the row the finding is about replaces the hints with what
-        // is wrong with it.
+        // Standing on the row the finding is about replaces flower's own hints
+        // with what is wrong with it — in the widget's footer, one line above
+        // the host's status line.
         stand_on(&mut session, &mut app, "part_of");
         app.status = None;
         let line = drawn(&mut session, &mut app);

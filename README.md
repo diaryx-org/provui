@@ -73,7 +73,10 @@ handling and nothing else.
   `[[a.md]]` in a paragraph and an `[[a.md]]` in `contents` land in the same
   place by construction rather than by agreement.
 - **`findings`** — what prov's integrity check says about one document, placed
-  where an editor can draw it. prov's `Finding` names the document and, for a
+  where an editor can draw it, and then *given* to that editor —
+  `DocumentSession::apply_findings` washes the body half under the prose as leaf
+  highlights and hangs the metadata half on the rows as flower annotations, so a
+  frontend gets markers and messages without drawing either. prov's `Finding` names the document and, for a
   link, the *site* — a relation's name, or a byte span in the body. A relation's
   name is one step short of a place: `contents` is a list, and the broken item is
   the third one. So this recovers the index by matching the finding's target
@@ -359,23 +362,33 @@ somewhere else — a parent reporting that this document does not link back — 
 not reachable from here and does not appear. What does appear is everything this
 document declares.
 
-Each half goes where it belongs. **Body findings become leaf highlights**,
-washed under the link they are about — the spans prov reports are already body
-offsets, so nothing converts — and `leaf-ratatui` draws them itself. The
-**status line carries the count**, and shows a metadata finding in full when the
-cursor reaches the row it is about, in place of the standing hints.
+**Each half goes to the editor that owns that half of the document, and the
+host draws neither.** Body findings become leaf highlights, washed under the
+link they are about — the spans prov reports are already body offsets, so
+nothing converts. Metadata findings become flower `Annotation`s at the same
+metadata path, so the row `contents[2]` was narrowed to gets the marker, and the
+widget puts the message in its own footer when the cursor reaches it. The host's
+**status line carries the count** and nothing else: that there is something to
+go and look at is the one part of this no widget can say, because neither of
+them can see the other's half.
 
-The metadata half stops there, and that is upstream's line rather than a
-choice: flower-core 0.5 has no per-row annotation, so there is nothing to hand
-the widget and the host draws the message itself. `session.meta_findings()` is
-the door until there is one; the `TODO(flower)` in `apply_findings` names what
-would replace it.
+`session.meta_findings()` and `meta_finding_at` are still there and still the
+prov-side answer — the `kind` and the severity rather than the sentence — for a
+frontend that wants to branch on a finding rather than draw it.
+`provui_core::annotations_of` is the translation on its own.
 
-One consequence of leaf's design is worth stating: `Doc::set_highlights`
-replaces the whole set rather than adding to it — deliberately, so the host and
-the document can never disagree about what is on screen — so `apply_findings`
-**owns** the body's highlight list. A frontend that also wants search hits or
-annotations in the body composes its own list and calls leaf directly.
+A finding about the *file* rather than about anything written in it — an orphan,
+a fixity mismatch — becomes an annotation at the **empty** path, which is
+flower's spelling for the document. Nothing draws the root, so those stay the
+host's to report from `session.findings()`; making one of them a row would be
+inventing a row prov never named.
+
+One consequence of both editors' design is worth stating: `Doc::set_highlights`
+and `Model::set_annotations` each replace the whole set rather than adding to
+it — deliberately, so the host and the document can never disagree about what is
+on screen — so `apply_findings` **owns** both lists. A frontend that also wants
+search hits in the body or annotations of its own on the rows composes the list
+itself and calls leaf and flower directly.
 
 ### Saving, and what is not here
 
