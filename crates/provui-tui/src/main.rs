@@ -81,6 +81,17 @@ pub const FOLLOW_CHORD: &str = "^G";
 /// likewise free in leaf's table.
 pub const BACK_CHORD: &str = "^O";
 
+/// Show the link text that would point at where the caret is — *r* for
+/// reference.
+///
+/// Free by the same two tests `^W` and `^G` passed: `^R` is unbound in leaf's
+/// Ctrl table (which takes `q s a c x v z y u k p f h` and nothing else), and
+/// `r` is not one of the bare letters flower navigates on (`j k l h e c C x q
+/// s`), so an un-intercepted one would reach it as a plain `r` and do nothing.
+/// `^L` and `^K` were the other candidates and both fail a test: `^K` is leaf's
+/// kill-to-end-of-line, and `l` is how flower opens a row.
+pub const REFERENCE_CHORD: &str = "^R";
+
 /// Which pane has the keyboard.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Focus {
@@ -182,6 +193,7 @@ keys:
     ^S              save the document (both regions, from either pane)
     ^G              follow the link under the cursor (either pane)
     ^O              back to the document you followed from
+    ^R              show the link text that points at the caret
     ^Q              quit
     body pane       leaf's keys — see `leaf --help`
     metadata pane   j/k move · l/h in/out · e edit · x delete
@@ -321,6 +333,10 @@ fn on_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent, screen: R
         go_back(session, app, screen);
         return Flow::Continue;
     }
+    if is_chord(key, 'r') {
+        show_reference(session, app);
+        return Flow::Continue;
+    }
 
     match app.focus {
         Focus::Metadata => match flower_ratatui::handle_key(session.metadata_mut(), key) {
@@ -432,6 +448,27 @@ fn follow(session: &mut DocumentSession, app: &mut App, screen: Rect) {
         }
         Err(e) => app.status = Some(format!("opening {}: {e}", target.display())),
     }
+}
+
+/// Put the link text that would point at the caret's position in the status
+/// line.
+///
+/// Showing it is the whole deliverable, and deliberately: this host has no
+/// clipboard — `^C` and `^X` in the body already say so — so writing the
+/// reference into the status line is the honest maximum, and it is the terminal
+/// that copies from there. A workspace is what supplies the spelling; without
+/// one it is a relative markdown link, which is the only form two paths alone
+/// can justify.
+fn show_reference(session: &DocumentSession, app: &mut App) {
+    if !session.has_body() {
+        app.status = Some("this document has no prose body to point into".into());
+        return;
+    }
+    let from = session.path().to_path_buf();
+    app.status = Some(format!(
+        "link to here: {}",
+        app.nav.reference_here(session, &from)
+    ));
 }
 
 /// Back to the document the last follow came from.
@@ -942,6 +979,41 @@ Original body.
         assert_eq!(app.nav.depth(), 0);
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The reference chord: the link text that points at where the caret is,
+    /// in the status line, because there is nowhere else for it to go.
+    #[test]
+    fn the_reference_chord_names_the_heading_the_caret_is_under() {
+        let path = scratch(
+            "provui_tui_reference.md",
+            "---\ntitle: A Note\n---\n# A Note\n\n## Crash Safety\n\nWhy the journal is written first.\n",
+        );
+        let nav = nav::Nav::none();
+        let mut session = nav.open(&path).unwrap();
+        let mut app = App::new(&session, nav);
+        begin(&mut session, &app, SCREEN);
+
+        caret_at(&mut session, "Why the journal");
+        on_key(&mut session, &mut app, ctrl('r'));
+        assert_eq!(
+            app.status.as_deref(),
+            Some("link to here: [Crash Safety](#crash-safety)"),
+            "the heading above the caret, slugged the way prov slugs one"
+        );
+
+        // Above the first heading there is no place to name, so what comes back
+        // is a reference to the document — which from the document itself is a
+        // relative link to its own file.
+        session.body_mut().caret = 0;
+        on_key(&mut session, &mut app, ctrl('r'));
+        assert_eq!(
+            app.status.as_deref(),
+            Some("link to here: [A Note](#a-note)"),
+            "the caret sits on the first heading itself"
+        );
+
+        let _ = std::fs::remove_file(&path);
     }
 
     /// Following is a *reading* gesture, so unlike quitting it has no

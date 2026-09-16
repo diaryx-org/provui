@@ -57,6 +57,23 @@ fn se(e: impl std::fmt::Display) -> SessionError {
     SessionError(e.to_string())
 }
 
+/// A heading in a document's prose body.
+///
+/// The piece of a document a `#locator` names: prov carries a locator on a link
+/// target and never resolves it, leaf's [`Doc::locate`](leaf_core::Doc::locate)
+/// resolves one it is given, and this is the third corner — the locator you
+/// would *write* for where the caret is now.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Heading {
+    /// The heading's own words, without its `#` marker.
+    pub text: String,
+    /// `1` for an `# H1`, `6` for an `###### H6`.
+    pub level: u32,
+    /// Byte range of the whole heading line within the **body text** — the same
+    /// coordinates [`crate::BodyLink::span`] and the caret are in.
+    pub span: std::ops::Range<usize>,
+}
+
 /// One open prov document: a metadata editor and a body editor over the same
 /// file, reconciled on save.
 pub struct DocumentSession {
@@ -278,6 +295,65 @@ impl DocumentSession {
         &mut self.body
     }
 
+    /// The heading the caret is under — the nearest one at or above it, and
+    /// `None` when the caret sits above the document's first heading (or there
+    /// are none).
+    ///
+    /// "At or above" is the rule every table of contents and every anchor
+    /// implementation uses: a caret three paragraphs into a section is in that
+    /// section, and the heading that opened it is the thing a reader would name
+    /// to point at where they are.
+    ///
+    /// Parsed through twig directly — `prov::twig` is the same copy prov and
+    /// leaf are both built on, so this is the tree leaf is already holding
+    /// rather than a second one with its own opinions. It is parsed again here
+    /// because leaf's own `Doc::nodes` is private: `Doc` exposes `locate` (a
+    /// fragment to a landing) and `link_destination_at_caret` (a caret to a
+    /// link) but nothing that hands back the node array, and nothing that
+    /// answers the caret-to-heading question. The parse is one document's prose
+    /// on a keystroke, which is the same price [`body_links`](Self::body_links)
+    /// pays and for the same reason.
+    pub fn heading_at_caret(&self) -> Option<Heading> {
+        use prov::twig;
+
+        let mut parsed = twig::Document::parse_str(&self.body.source, self.body.format).ok()?;
+        let nodes = parsed.nodes().ok()?;
+        let caret = self.body.caret;
+        let node = nodes
+            .iter()
+            .filter(|n| n.kind == twig::Kind::Heading)
+            .filter(|n| n.span.start <= caret)
+            .max_by_key(|n| n.span.start)?;
+        // `content_span` is the words without the `#` marker; `text` is twig's
+        // own flattening of the same, and is what a heading with inline marks
+        // in it (`## The *hard* part`) reads as. Prefer the source slice, so
+        // the locator is derived from what is actually written.
+        let text = node
+            .content_span
+            .clone()
+            .and_then(|span| self.body.source.get(span))
+            .map(str::to_string)
+            .or_else(|| node.text.clone())?;
+        Some(Heading {
+            text: text.trim().to_string(),
+            level: node.level.unwrap_or(1),
+            span: node.span.clone(),
+        })
+    }
+
+    /// The `#locator` naming where the caret is — [`prov::link::slug`] of the
+    /// heading above it.
+    ///
+    /// prov's slug rather than a local one, because prov is what has to read it
+    /// back: the fragment this writes is the fragment `prov check` resolves and
+    /// the fragment leaf's `Doc::locate` lands, and `locate`'s third reading —
+    /// a heading's own words, slugged — is the one that applies to Markdown,
+    /// where there are no ids to name at all.
+    pub fn locator_at_caret(&self) -> Option<String> {
+        self.heading_at_caret()
+            .map(|heading| prov::link::slug(&heading.text))
+    }
+
     /// Programmatically set the metadata value at `path` — the flat, by-path edit
     /// a UI/FFI issues (vs. driving the selection).
     pub fn set_metadata(&mut self, path: &[Seg], value: Value) {
@@ -382,6 +458,52 @@ Original body.
         assert!(session.dirty());
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// The heading above the caret, and the locator it names — the three
+    /// positions a caret can be in relative to a document's headings.
+    #[test]
+    fn the_heading_above_the_caret_is_what_a_locator_names() {
+        const PROSE: &str = "\
+---
+title: Notes
+---
+Preamble, above everything.
+
+# Crash Safety
+
+Why the journal is written first.
+
+## The *hard* part
+
+And what it costs.
+";
+        let mut session =
+            DocumentSession::from_text("notes.md", PROSE, BodyFormat::Markdown, None).unwrap();
+        let body = session.body().source.clone();
+        let at = |needle: &str| body.find(needle).expect(needle);
+
+        // Above the first heading there is nothing to name — not the document's
+        // title, which is not a place in the prose.
+        session.body_mut().caret = at("Preamble");
+        assert_eq!(session.heading_at_caret(), None);
+        assert_eq!(session.locator_at_caret(), None);
+
+        // Inside a section: the heading that opened it, not the nearest one in
+        // either direction.
+        session.body_mut().caret = at("Why the journal");
+        let heading = session.heading_at_caret().expect("under a heading");
+        assert_eq!(heading.text, "Crash Safety");
+        assert_eq!(heading.level, 1);
+        assert_eq!(&body[heading.span.clone()], "# Crash Safety");
+        assert_eq!(session.locator_at_caret().as_deref(), Some("crash-safety"));
+
+        // Deeper in, under the sub-heading — and its inline emphasis is part of
+        // the words, so the slug drops the markup the way prov's does.
+        session.body_mut().caret = at("And what it costs");
+        let heading = session.heading_at_caret().expect("under a heading");
+        assert_eq!(heading.level, 2);
+        assert_eq!(session.locator_at_caret().as_deref(), Some("the-hard-part"));
     }
 
     /// The whole composition, end to end on disk: open → edit both regions →

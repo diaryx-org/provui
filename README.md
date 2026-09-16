@@ -246,6 +246,7 @@ strand a half-typed value in a pane no longer taking keys — and says so.
 | `^S` | save the document — **both** regions, from either pane |
 | `^G` | follow the link under the cursor — the metadata row, or the body link the caret is inside |
 | `^O` | back to the document you followed from |
+| `^R` | show the link text that points at the caret |
 | `^Q` | quit; refused once while there are unsaved changes |
 | body pane | leaf's keys (`leaf --help`) |
 | metadata pane | `j`/`k` move · `l`/`h` in/out · `e` edit · `x` delete |
@@ -282,6 +283,41 @@ Images are not followed. An `![alt](pic.png)` is one of prov's body links, but
 it names a payload rather than a document, and opening a picture in a text
 editor is not what the chord promises; prov's own census leaves them out for the
 same reason.
+
+### A link to here
+
+Following a link is half of navigating a workspace; the other half is writing
+one, and that starts with knowing what to write. **`^R` puts the link text that
+would point at where the caret is into the status line** — `link to here:
+[Crash Safety](#crash-safety)`.
+
+The locator is the heading at or above the caret, slugged with prov's own
+`link::slug`, which is the spelling that matters: it is the fragment `prov
+check` resolves and the fragment leaf's `Doc::locate` lands, and for Markdown —
+where there are no ids to name — a heading's own words are the only thing a
+fragment can name. Above the first heading there is no place to point at, and
+the answer is a reference to the document as a whole.
+
+The rest of the spelling is the *workspace's*. `WorkspaceView::reference_to`
+asks prov for the effective `reference_style` and writes markdown or wikilink,
+by path or by id, root-relative or document-relative, labelled or bare,
+accordingly — with the target's own `title` as the label, falling back to
+`link::path_to_title`. A workspace that addresses by id gets one only if the
+target is **already registered**: minting an id would be a write, and this stays
+read-only, so an unregistered target degrades to a path link, which is what
+prov's `format_reference` does when handed no id. With no workspace it is a
+relative markdown link, which is the only form two paths alone can justify.
+
+**Showing it is the whole deliverable.** This host has no clipboard — `^C` and
+`^X` in the body already say so — so the status line is the honest maximum, and
+it is the terminal that copies from there. A frontend with a clipboard calls the
+same `provui_core::reference_here` and puts the string on it.
+
+`^R` is free by the same two tests `^W` and `^G` passed: unbound in leaf's Ctrl
+table, and `r` is not a bare letter flower navigates on, so an un-intercepted one
+would reach flower as a plain `r` and do nothing. `^L` and `^K` were the other
+candidates and both fail a test — `^K` is leaf's kill-to-end-of-line, and `l` is
+how flower opens a row.
 
 Leaving a document with **unsaved changes is refused**, with no second-press
 escape hatch. Quitting has one because quitting twice discards work you were

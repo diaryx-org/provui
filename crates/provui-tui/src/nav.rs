@@ -185,6 +185,17 @@ impl Nav {
         Ok(Follow::BodyLands(Box::new(link), landing))
     }
 
+    /// The link text to write to **where the body caret is**, in this
+    /// workspace's own reference style — "a link to here".
+    ///
+    /// `from` is the document the link would be written *in*. This host has one
+    /// document open and nowhere to paste, so it passes the session's own path
+    /// and gets the same-document `#locator` form; a frontend with a second
+    /// document in hand passes that one instead and gets a path or an id.
+    pub fn reference_here(&self, session: &DocumentSession, from: &Path) -> String {
+        provui_core::reference_here(self.workspace.as_ref(), session, from)
+    }
+
     /// Open `to`, remembering `from` so [`back`](Self::back) can return.
     pub fn go(&mut self, from: &Path, to: &Path) -> Result<DocumentSession, SessionError> {
         let session = self.open(to)?;

@@ -41,7 +41,11 @@
 //!   following one from the metadata cursor are the same code.
 //! - [`workspace`] — [`WorkspaceView`], which finds the workspace a document
 //!   belongs to and resolves a link to a document you can open. The one piece
-//!   that reads the filesystem, and read-only.
+//!   that reads the filesystem, and read-only. It also runs that backwards:
+//!   [`WorkspaceView::reference_to`] and [`reference_here`] give the link text
+//!   to *write* to a document — or to a place inside one — in the workspace's
+//!   own reference style. Still a read; nothing is written and nothing is
+//!   registered.
 //!
 //! ## What this crate will not do for you
 //!
@@ -78,8 +82,8 @@ pub use config_schema::{CONFIG_READONLY_KEYS, config_schema};
 pub use facets::{Facet, Facets};
 pub use links::{AnyLink, MetaLink, TargetKind, link_at, links_in, links_under};
 pub use schema::{Vocabularies, schema_for_document, schema_from_config};
-pub use session::{DocumentSession, SessionError};
-pub use workspace::{Destination, WorkspaceView};
+pub use session::{DocumentSession, Heading, SessionError};
+pub use workspace::{Destination, WorkspaceView, reference_here, reference_without_workspace};
 
 use fig::Value;
 use flower_core::tree::{self, to_fig};

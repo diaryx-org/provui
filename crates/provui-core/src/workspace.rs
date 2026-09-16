@@ -35,7 +35,8 @@ use flower_core::Schema;
 use prov::index::FileIndex;
 use prov::workspace::FieldScopes;
 use prov::{
-    Backlink, Discovery, Settings, StdFs, Target, Workspace, WorkspaceConfig, block_on, discover,
+    Backlink, Discovery, IdIndex, Settings, StdFs, Target, Workspace, WorkspaceConfig, block_on,
+    discover,
 };
 
 use crate::facets::Facets;
@@ -360,6 +361,63 @@ impl WorkspaceView {
         Ok(self.destination(target, link))
     }
 
+    /// The link text to **write** from the document at `from` to the one at
+    /// `to`, optionally landing on `locator` inside it — "a link to there", in
+    /// this workspace's own spelling.
+    ///
+    /// The inverse of [`resolve`](Self::resolve), and the only thing in this
+    /// crate that produces link syntax rather than consuming it. It is still a
+    /// read: nothing is written, nothing is registered, and the caller decides
+    /// what to do with the string. Retargeting an existing link is prov's
+    /// `mutate` layer and is still out of scope (see the module docs); handing
+    /// a reader the text of a link is not.
+    ///
+    /// Everything about the spelling is prov's
+    /// [`reference_style`](prov::Workspace::reference_style) — markdown or
+    /// wikilink, by path or by id, root-relative or document-relative, labelled
+    /// or bare. A workspace that addresses by id gets one **only if the target
+    /// is already registered**: minting an id would be a write, so an
+    /// unregistered target degrades to a path link, which is exactly what
+    /// [`format_reference`](prov::link::format_reference) does with `None`.
+    ///
+    /// The label is the target's own `title`, falling back to prov's
+    /// [`path_to_title`](prov::link::path_to_title) — the same two steps every
+    /// prov verb that authors a link takes. A target that cannot be read falls
+    /// back with it rather than failing: a link to a document that is not there
+    /// yet is a reasonable thing to want to write.
+    pub fn reference_to(
+        &self,
+        from: &Path,
+        to: &Path,
+        locator: Option<&str>,
+    ) -> Result<String, SessionError> {
+        let from_rel = self.relative(from);
+        let to_rel = self.relative(to);
+        let style = self.ws.reference_style();
+        let id = style
+            .registers()
+            .then(|| self.ws.index().id_for_path(&to_rel))
+            .flatten();
+        let title = self.title_of(&to_rel);
+        let reference =
+            prov::link::format_reference(style, &from_rel, &to_rel, id.as_ref(), &title);
+        Ok(with_locator(&reference, locator))
+    }
+
+    /// A document's `title`, or prov's title-from-path fallback.
+    fn title_of(&self, rel: &Path) -> String {
+        block_on(self.ws.read_text(rel))
+            .ok()
+            .and_then(|text| prov::Document::parse(rel, &text).ok())
+            .and_then(|doc| {
+                fig::Value::from(&doc.meta)
+                    .get("title")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| prov::link::path_to_title(rel))
+    }
+
     /// Every inbound reference to `target`, walked from the workspace root.
     ///
     /// prov keeps no stored backlink index — this is the census inverted, so it
@@ -447,6 +505,86 @@ pub fn resolve_without_workspace(doc: &Path, link: &impl AnyLink) -> Destination
             let exists = path.is_file();
             Destination::Document { path, exists }
         }
+    }
+}
+
+/// Attach a `#locator` to a reference that has already been rendered.
+///
+/// A locator belongs on the *target*, inside whatever wrapper the style chose —
+/// `[Title](notes.md#a-heading)`, not `[Title](notes.md)#a-heading` — and
+/// [`format_reference`](prov::link::format_reference) builds the target itself,
+/// so the only seam left is to read the rendered reference back with
+/// [`Link::parse`](prov::Link::parse), re-target it with
+/// [`join_locator`](prov::link::join_locator), and render it again. Both halves
+/// are prov's, and `render` reproduces the wrapper it parsed, so a wikilink
+/// workspace stays a wikilink workspace.
+fn with_locator(reference: &str, locator: Option<&str>) -> String {
+    let Some(locator) = locator else {
+        return reference.to_string();
+    };
+    let link = prov::Link::parse(reference);
+    let target = prov::link::join_locator(link.target.clone(), Some(locator));
+    link.with_target(target).render()
+}
+
+/// The link text to write from `from` to `to` with **no workspace to spell it**
+/// — the lexical floor, matching [`resolve_without_workspace`].
+///
+/// A relative markdown link, which is the one spelling that needs nothing but
+/// the two paths: no config to read a reference style out of, no registry to
+/// address by id, no root to be absolute from. The label is prov's
+/// title-from-path, since reading the target's frontmatter for a better one is
+/// exactly the filesystem work this half of the module does not do.
+pub fn reference_without_workspace(from: &Path, to: &Path, locator: Option<&str>) -> String {
+    let title = prov::link::path_to_title(to);
+    let reference = prov::format_link(prov::LinkStyle::MarkdownRelative, from, to, &title);
+    with_locator(&reference, locator)
+}
+
+/// The link text to write from `from` to **where the caret is** in `session` —
+/// "a link to here".
+///
+/// The composition of the two halves this module and [`DocumentSession`] each
+/// own: the caret's heading becomes a locator
+/// ([`DocumentSession::locator_at_caret`]), and the workspace spells the
+/// reference to the document ([`WorkspaceView::reference_to`]).
+///
+/// `from` is the document the link would be *written in*, which is what decides
+/// a relative path. Passing the session's own path — the default a frontend
+/// with one document open has — asks for a link from this document to a place
+/// in this document, and gets the same-document `#locator` form rather than a
+/// path back to the file you are already in. With no heading above the caret
+/// there is no place to name, and the answer is a reference to the document as
+/// a whole.
+pub fn reference_here(
+    view: Option<&WorkspaceView>,
+    session: &DocumentSession,
+    from: &Path,
+) -> String {
+    let locator = session.locator_at_caret();
+    let here = session.path();
+    if let (Some(locator), true) = (locator.as_deref(), same_file(from, here)) {
+        // A link into the document it is written in addresses no document at
+        // all: `[The Hard Part](#the-hard-part)`. Written by hand rather than
+        // through `format_reference`, which always addresses a document —
+        // there is nothing for it to address, and a workspace's path style has
+        // no say over a fragment.
+        let label = session
+            .heading_at_caret()
+            .map(|h| h.text)
+            .unwrap_or_else(|| locator.to_string());
+        return prov::Link {
+            label: Some(label),
+            target: prov::link::join_locator(String::new(), Some(locator)),
+            wikilink: false,
+        }
+        .render();
+    }
+    match view {
+        Some(view) => view
+            .reference_to(from, here, locator.as_deref())
+            .unwrap_or_else(|_| reference_without_workspace(from, here, locator.as_deref())),
+        None => reference_without_workspace(from, here, locator.as_deref()),
     }
 }
 
@@ -624,6 +762,91 @@ mod tests {
             .get("audience", 0)
             .expect("audiences.yaml");
         assert!(vocab.terms.contains_key("public"));
+    }
+
+    /// The inverse of following: the link text to *write*, in the workspace's
+    /// own spelling, with and without a locator.
+    #[test]
+    fn a_reference_is_written_in_the_workspaces_own_style() {
+        let vault = Vault::new("reference");
+        let note = vault.path("notes/note.md");
+        let root = vault.path("README.md");
+        let view = WorkspaceView::discover(&note).unwrap().unwrap();
+
+        // An unconfigured workspace is markdown, by path, workspace-absolute —
+        // prov's default reference style, and the label is the target's own
+        // `title` rather than its filename.
+        assert_eq!(
+            view.reference_to(&note, &root, None).unwrap(),
+            "[The Vault](/README.md)"
+        );
+        assert_eq!(
+            view.reference_to(&root, &note, None).unwrap(),
+            "[A Note](/notes/note.md)"
+        );
+
+        // The locator goes on the target, inside the wrapper.
+        assert_eq!(
+            view.reference_to(&root, &note, Some("crash-safety"))
+                .unwrap(),
+            "[A Note](/notes/note.md#crash-safety)"
+        );
+
+        // A target with no document to read a title off falls back to prov's
+        // title-from-path rather than failing.
+        assert_eq!(
+            view.reference_to(&root, &vault.path("notes/not_here.md"), None)
+                .unwrap(),
+            "[Not Here](/notes/not_here.md)"
+        );
+    }
+
+    /// "A link to here" — the caret's heading becomes the locator, and the two
+    /// `from`s a frontend actually has produce the two forms.
+    #[test]
+    fn a_link_to_here_names_the_heading_the_caret_is_under() {
+        let vault = Vault::new("link_to_here");
+        let note = vault.path("notes/note.md");
+        std::fs::write(
+            &note,
+            "---\ntitle: A Note\npart_of: '[The Vault](/README.md)'\n---\nPreamble, above every heading.\n\n# A Note\n\n## Crash Safety\n\nWhy the journal is written first.\n",
+        )
+        .unwrap();
+        let view = WorkspaceView::discover(&note).unwrap().unwrap();
+        let mut session = DocumentSession::open(&note).unwrap();
+        let at = session.body().source.find("Why the journal").unwrap();
+        session.body_mut().caret = at;
+
+        // From this document: a same-document fragment, labelled with the
+        // heading's own words. There is no path to write — you are already
+        // here.
+        assert_eq!(
+            reference_here(Some(&view), &session, &note),
+            "[Crash Safety](#crash-safety)"
+        );
+
+        // From another document: the workspace's reference to this one, with
+        // the same fragment on the end.
+        assert_eq!(
+            reference_here(Some(&view), &session, &vault.path("README.md")),
+            "[A Note](/notes/note.md#crash-safety)"
+        );
+
+        // With no workspace at all: a relative markdown link, titled from the
+        // path, because there is no config to read a style out of.
+        assert_eq!(
+            reference_here(None, &session, &vault.path("README.md")),
+            "[Note](notes/note.md#crash-safety)"
+        );
+
+        // Above the first heading there is no place to name, so the answer is
+        // the document itself.
+        session.body_mut().caret = 0;
+        assert_eq!(session.locator_at_caret(), None);
+        assert_eq!(
+            reference_here(Some(&view), &session, &vault.path("README.md")),
+            "[A Note](/notes/note.md)"
+        );
     }
 
     /// The three answers a follow actually has: a document that is there, a
