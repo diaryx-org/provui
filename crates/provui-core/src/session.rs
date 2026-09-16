@@ -25,11 +25,12 @@
 //! This is the surface a UniFFI facade will wrap, and the surface a TUI drives
 //! directly.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use fig::Value;
 use flower_core::annotate;
-use flower_core::{Annotation, Model, Schema, Seg, ViewMode};
+use flower_core::{Annotation, Choice, Model, Schema, Seg, ViewMode};
 use leaf_core::{Doc, Format as BodyFormat};
 use prov::{Document, MetaCarrier};
 
@@ -385,6 +386,21 @@ impl DocumentSession {
     pub fn locator_at_caret(&self) -> Option<String> {
         self.heading_at_caret()
             .map(|heading| prov::link::slug(&heading.text))
+    }
+
+    /// Hand the metadata backend the candidate lists a reference field's picker
+    /// should offer, per relation — see
+    /// [`ProvBackend::set_candidates`](crate::ProvBackend::set_candidates) for
+    /// what it costs and
+    /// [`WorkspaceView::candidates_map`](crate::WorkspaceView::candidates_map)
+    /// for where a list comes from.
+    ///
+    /// Through the session rather than through `metadata_mut().backend_mut()`
+    /// because it is the same kind of out-of-band fact as the schema and the
+    /// findings: something only a host with a workspace can know, handed to the
+    /// one document that cannot work it out.
+    pub fn set_candidates(&mut self, candidates: HashMap<String, Vec<Choice>>) {
+        self.metadata.backend_mut().set_candidates(candidates);
     }
 
     /// Programmatically set the metadata value at `path` — the flat, by-path edit

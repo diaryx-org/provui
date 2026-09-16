@@ -29,7 +29,11 @@ handling and nothing else.
   metadata carrier and the prose body all survive an edit. It is the second
   implementation of that trait, and it is checked against flower's own
   conformance suite rather than against a restatement of it, so a guarantee
-  added upstream arrives here as a failing test.
+  added upstream arrives here as a failing test. It also answers flower's two
+  document-shaped questions: what a picker on a **reference field** should
+  offer (`candidates`, injected by `set_candidates` because one document has no
+  way to enumerate a workspace) and what a **list item is**, across a reorder
+  (`item_key` — a link's target, which survives a relabel).
 - **`DocumentSession`** — one open prov document, edited through a flower
   metadata model *and* a leaf body editor, reconciled on save. The two regions
   share no byte offsets, so they edit independently and meet only at `save`,
@@ -269,7 +273,45 @@ strand a half-typed value in a pane no longer taking keys — and says so.
 | `^R` | show the link text that points at the caret |
 | `^Q` | quit; refused once while there are unsaved changes |
 | body pane | leaf's keys (`leaf --help`) |
-| metadata pane | `j`/`k` move · `l`/`h` in/out · `e` edit · `x` delete |
+| metadata pane | `j`/`k` move · `l`/`h` in/out · `e` pick or edit · `E` type · `x` delete |
+
+### Picking a link instead of typing one
+
+A relation's row is a link, and a link to a document in this workspace is a
+string a person should not have to spell. flower's `e` opens a **picker** where
+the field has something to pick from and the text line where it does not, so
+there is one key for both and this host binds nothing new for it.
+
+What a reference field has to pick from is *other documents*, which flower-core
+— one document, no filesystem — can never enumerate. So it asks the backend, and
+`ProvBackend` answers from a map it was handed: `WorkspaceView::candidates_for`
+walks the workspace's reachable documents (prov's own population, so the config
+document the root points at is one of them), and each candidate's **value is
+exactly what `WorkspaceView::reference_to` would write** — markdown or wikilink,
+by path or by id, labelled with the target's own title, in this workspace's
+style. A document whose `part_of` was chosen from the list is therefore
+indistinguishable from one whose `part_of` was typed by hand correctly. The
+label is the title, which is what the filter matches; the detail is the path,
+which is what tells two documents with the same title apart.
+
+**The walk is paid at open and never on a keystroke.** `Nav::open` builds the
+map once and the backend answers every picker from it by relation name, so
+`contents`, `contents[4]` and the append position are one entry and opening the
+picker is a lookup. The staleness that buys is the staleness the per-document
+check already has: a document created in another window is not on the list until
+this one is reopened.
+
+A field with a **controlled vocabulary** never reaches the backend at all —
+flower asks its own schema first, and a prov vocabulary is already a
+`Constraint::Enum` there. That includes a *reified* vocabulary, whose terms are
+documents: `schema_from_config` emits the field's rule before the relation's and
+a schema is first-match-wins, so the picker shows the vocabulary's terms rather
+than every document in the workspace. `ProvBackend::relation_at` reads the same
+rule, which is what keeps the two from ever disagreeing about which one wins.
+
+Choosing writes a value through the ordinary commit funnel, so everything that
+was already true of a typed value is still true of a chosen one: the schema
+validates it, a workspace-maintained key refuses it, and the splice is lossless.
 
 ### Following links
 

@@ -131,7 +131,15 @@ impl Nav {
         self.back.len()
     }
 
-    /// Open a document with this host's policy applied — the whole of it.
+    /// Open a document with this host's policy applied — the whole of it,
+    /// plus the two things only a workspace can supply: the schema, and the
+    /// documents a reference field's picker offers.
+    ///
+    /// `open_managed` rather than [`WorkspaceView::open_document`] because the
+    /// managed-key set has to arrive before flower builds its first row list,
+    /// and `open_document` is deliberately the unopinionated one. So the
+    /// candidate map is wired here by hand, which is the same call
+    /// `open_document` makes.
     pub fn open(&self, path: &Path) -> Result<DocumentSession, SessionError> {
         let schema = self.workspace.as_ref().map(|ws| ws.schema_for(path));
         let mut session =
@@ -141,6 +149,15 @@ impl Nav {
         // document that has none says nothing to anybody.
         let structural = self.facets.structural_keys(session.meta());
         session.metadata_mut().set_demoted(structural);
+        // What a picker on a relation's row should offer. A walk of the
+        // workspace, paid once here and never on a keystroke — and a walk that
+        // fails is a field with no picker rather than a document that will not
+        // open, so the error is dropped deliberately.
+        if let Some(ws) = &self.workspace
+            && let Ok(candidates) = ws.candidates_map(path)
+        {
+            session.set_candidates(candidates);
+        }
         Ok(session)
     }
 

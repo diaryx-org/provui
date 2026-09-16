@@ -196,7 +196,8 @@ keys:
     ^R              show the link text that points at the caret
     ^Q              quit
     body pane       leaf's keys — see `leaf --help`
-    metadata pane   j/k move · l/h in/out · e edit · x delete
+    metadata pane   j/k move · l/h in/out · e pick/edit · E type · x delete
+                    u/U undo/redo the metadata's own journal
 
 mouse:
     click           the pane under the pointer takes the keyboard; in the
@@ -386,6 +387,29 @@ fn on_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent, screen: R
     }
 }
 
+/// Whether the metadata pane has something open over its page — a value being
+/// typed, or a picker being walked.
+///
+/// Both are modal and both are the model's own business until they close, so
+/// every gesture that would leave the pane or move its cursor checks this
+/// rather than checking `Mode::Editing` alone. flower gained the picker after
+/// this host was written, and a check that named only the one mode would have
+/// let a click commit a choice to the wrong row.
+fn open_in_metadata(session: &DocumentSession) -> bool {
+    matches!(
+        session.metadata().mode,
+        Mode::Editing { .. } | Mode::Choosing { .. }
+    )
+}
+
+/// What to say about it, in the vocabulary of whichever one is open.
+fn mid_edit_refusal(session: &DocumentSession) -> String {
+    match session.metadata().mode {
+        Mode::Choosing { .. } => "finish choosing first — Enter picks, Esc cancels".into(),
+        _ => "finish the metadata edit first — Enter commits, Esc cancels".into(),
+    }
+}
+
 fn switch_focus(session: &DocumentSession, app: &mut App) {
     if !session.has_body() {
         app.status = Some("this document has no prose body".into());
@@ -395,8 +419,8 @@ fn switch_focus(session: &DocumentSession, app: &mut App) {
     // longer taking keys, and flower's mode would still be `Editing` when you
     // came back. Cheaper to say so than to guess whether it was a commit or a
     // cancel.
-    if matches!(session.metadata().mode, Mode::Editing { .. }) {
-        app.status = Some("finish the metadata edit first — Enter commits, Esc cancels".into());
+    if open_in_metadata(session) {
+        app.status = Some(mid_edit_refusal(session));
         return;
     }
     app.focus = app.focus.other();
@@ -529,8 +553,8 @@ fn go_back(session: &mut DocumentSession, app: &mut App, screen: Rect) {
 /// gesture, and losing an edit to it would be losing it to something nobody
 /// thinks of as destructive.
 fn leaving_is_allowed(session: &DocumentSession, app: &mut App) -> bool {
-    if matches!(session.metadata().mode, Mode::Editing { .. }) {
-        app.status = Some("finish the metadata edit first — Enter commits, Esc cancels".into());
+    if open_in_metadata(session) {
+        app.status = Some(mid_edit_refusal(session));
         return false;
     }
     if session.dirty() {
@@ -615,7 +639,7 @@ fn on_mouse(session: &mut DocumentSession, app: &mut App, mouse: MouseEvent) {
         // flower's own keys leave both alone while editing, and a click that
         // moved the cursor out from under a half-typed value would commit it to
         // the wrong row.
-        if matches!(session.metadata().mode, Mode::Editing { .. }) {
+        if open_in_metadata(session) {
             return;
         }
         let model = session.metadata_mut();
@@ -1105,6 +1129,70 @@ Original body.
         app.status = None;
         let line = drawn(&mut session, &mut app);
         assert!(line.contains("broken part_of link"), "{line}");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// `e` on a relation's row opens flower's picker over the workspace's own
+    /// documents — and this host binds nothing for it.
+    ///
+    /// The key is flower's (`begin_choose`, which falls back to the text line
+    /// where there is nothing to pick from), the list is the backend's, and the
+    /// backend got it from `Nav::open`. What is being tested here is the wiring:
+    /// a document opened through this host has candidates, so the one key does
+    /// the right thing on a link row and the old thing everywhere else.
+    #[test]
+    fn a_relation_row_picks_from_the_workspace_and_nothing_here_binds_it() {
+        let dir = std::env::temp_dir().join("provui_tui_picker");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("README.md"),
+            "---\ntitle: The Vault\ncontents:\n- '[A Note](note.md)'\n- '[Another](other.md)'\n---\n# The Vault\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.join("other.md"),
+            "---\ntitle: Another\npart_of: '[The Vault](README.md)'\n---\n# Another\n",
+        )
+        .unwrap();
+        let note = dir.join("note.md");
+        std::fs::write(
+            &note,
+            "---\ntitle: A Note\npart_of: '[The Vault](README.md)'\n---\n# A Note\n",
+        )
+        .unwrap();
+
+        let nav = nav::Nav::discover(&note);
+        assert!(nav.has_workspace());
+        let mut session = nav.open(&note).unwrap();
+        let mut app = App::new(&session, nav);
+        begin(&mut session, &app, SCREEN);
+
+        stand_on(&mut session, &mut app, "part_of");
+        on_key(&mut session, &mut app, key(KeyCode::Char('e')));
+        let offered: Vec<String> = session
+            .metadata()
+            .visible_choices()
+            .iter()
+            .map(|c| c.label.clone())
+            .collect();
+        assert_eq!(
+            offered,
+            ["The Vault", "Another"],
+            "the workspace's other documents, this one left out"
+        );
+
+        // Esc closes it and writes nothing.
+        on_key(&mut session, &mut app, key(KeyCode::Esc));
+        assert!(!session.dirty(), "cancelling a pick is not an edit");
+
+        // And on a row with neither a vocabulary nor a relation, the same key
+        // is still the text line it always was.
+        stand_on(&mut session, &mut app, "title");
+        on_key(&mut session, &mut app, key(KeyCode::Char('e')));
+        assert!(matches!(session.metadata().mode, Mode::Editing { .. }));
+        on_key(&mut session, &mut app, key(KeyCode::Esc));
 
         let _ = std::fs::remove_dir_all(&dir);
     }

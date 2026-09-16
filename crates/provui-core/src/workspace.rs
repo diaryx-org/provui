@@ -29,9 +29,10 @@
 //! nothing to overlap: each entry point blocks with prov's own
 //! [`prov::block_on`], which is the same executor prov's CLI uses.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use flower_core::Schema;
+use flower_core::{Choice, Schema};
 use prov::index::FileIndex;
 use prov::workspace::FieldScopes;
 use prov::{
@@ -324,7 +325,91 @@ impl WorkspaceView {
     pub fn open_document(&self, path: impl AsRef<Path>) -> Result<DocumentSession, SessionError> {
         let path = self.absolute(path.as_ref());
         let schema = self.schema_for(&path);
-        DocumentSession::open_with_schema(path, schema)
+        let mut session = DocumentSession::open_with_schema(&path, schema)?;
+        // The walk is paid here, once, and the backend answers every picker
+        // from the map afterwards — see `ProvBackend::set_candidates`. A
+        // workspace that cannot be walked is a workspace with no candidates,
+        // not a document that cannot be opened: the field falls back to free
+        // text, which is what it was before there was a picker at all.
+        if let Ok(map) = self.candidates_map(&path) {
+            session.set_candidates(map);
+        }
+        Ok(session)
+    }
+
+    /// Every relation's candidate list for a document being edited at `doc`, in
+    /// the shape [`ProvBackend::set_candidates`](crate::ProvBackend::set_candidates)
+    /// takes.
+    ///
+    /// **One walk, whatever the relation.** Every content document in the
+    /// workspace is a candidate for every relation — prov's relations are not
+    /// typed by what they may point at — so the list is built once and shared
+    /// across the entries. The map is keyed by relation so that the backend can
+    /// answer without knowing any of this, and so that a narrowing added later
+    /// (a relation that may only point at an index, say) changes one function
+    /// and nothing downstream.
+    pub fn candidates_map(&self, doc: &Path) -> Result<HashMap<String, Vec<Choice>>, SessionError> {
+        let choices = self.candidates_for(doc, "")?;
+        Ok(self
+            .config
+            .relation_set()
+            .relations()
+            .iter()
+            .map(|rel| (rel.name.clone(), choices.clone()))
+            .collect())
+    }
+
+    /// What a picker on `relation`, in the document at `doc`, should offer:
+    /// every other content document in the workspace, spelled as a link this
+    /// workspace would write.
+    ///
+    /// Each [`Choice`] carries the three things a picker draws and commits:
+    ///
+    /// - **`value`** is exactly what [`reference_to`](Self::reference_to) would
+    ///   write for that target — markdown or wikilink, by path or by id,
+    ///   root-relative or document-relative, labelled with the target's own
+    ///   title. So choosing a candidate writes a link in the workspace's own
+    ///   style, and a document that chooses one is indistinguishable from a
+    ///   document whose link was typed by hand correctly.
+    /// - **`label`** is the target's title, which is what a reader is looking
+    ///   for and what flower's filter matches against.
+    /// - **`detail`** is the workspace-relative path, which is what tells two
+    ///   documents with the same title apart.
+    ///
+    /// `doc` itself is left out: a document contains or is contained by other
+    /// documents, and prov's check has a finding for the one that points at
+    /// itself.
+    ///
+    /// `relation` is read for nothing today and is in the signature anyway,
+    /// because *which* relation is asking is the only axis this could ever be
+    /// narrowed along, and a caller that has already written the argument does
+    /// not have to be found again when it is.
+    ///
+    /// ## What it costs
+    ///
+    /// A spanning walk from the workspace root
+    /// ([`reachable_documents_from`](prov::Workspace::reachable_documents_from))
+    /// — the same population `prov check` counts — plus one read per document
+    /// for its title. Proportional to the workspace, not to the document. This
+    /// is a per-open cost and must not be put behind a keystroke; see
+    /// [`ProvBackend::set_candidates`](crate::ProvBackend::set_candidates) for
+    /// where the answer is cached.
+    pub fn candidates_for(&self, doc: &Path, relation: &str) -> Result<Vec<Choice>, SessionError> {
+        let _ = relation;
+        let doc_rel = self.relative(doc);
+        let reachable = block_on(self.ws.reachable_documents_from(&self.root_doc)).map_err(we)?;
+        let mut choices = Vec::new();
+        for target in reachable {
+            if target == doc_rel {
+                continue;
+            }
+            let reference = self.reference_to(&doc_rel, &target, None)?;
+            choices.push(
+                Choice::new(fig::Value::Str(reference), self.title_of(&target))
+                    .detail(target.display().to_string()),
+            );
+        }
+        Ok(choices)
     }
 
     /// Resolve a link written in the document at `doc` (absolute or
@@ -1025,6 +1110,102 @@ mod tests {
         // the body's highlights have.
         session.apply_findings(&[]);
         assert!(session.metadata().annotations().is_empty());
+    }
+
+    /// A picker on a reference field offers the workspace's other documents,
+    /// spelled the way this workspace spells a link — and choosing one writes
+    /// exactly that.
+    ///
+    /// The whole point of routing it through `reference_to` rather than
+    /// formatting a path here: a document that chose a candidate is
+    /// indistinguishable from one whose link was typed by hand correctly.
+    #[test]
+    fn a_reference_field_offers_the_workspaces_other_documents() {
+        let vault = Vault::new("candidates");
+        let note = vault.path("notes/note.md");
+        let view = WorkspaceView::discover(&note).unwrap().unwrap();
+
+        let offered = view.candidates_for(&note, "part_of").expect("walk");
+        // Every document the workspace *reaches* — which is prov's own
+        // population, so the config document the root points at is one of them
+        // and the vocabulary store, which is loaded rather than contained, is
+        // not. The document being edited is left out: a link from a document to
+        // itself is one of prov's findings.
+        let labels: Vec<&str> = offered.iter().map(|c| c.label.as_str()).collect();
+        assert_eq!(labels, ["The Vault", "vault config"], "{offered:#?}");
+
+        // The value is the reference text, not the path: this vault writes
+        // labelled markdown links by workspace-absolute path.
+        let root = offered
+            .iter()
+            .find(|c| c.label == "The Vault")
+            .expect("the root");
+        assert_eq!(
+            root.value,
+            fig::Value::Str("[The Vault](/README.md)".into()),
+            "exactly what `reference_to` would write"
+        );
+        assert_eq!(
+            root.detail.as_deref(),
+            Some("README.md"),
+            "the path, to tell two titles apart"
+        );
+
+        // And it reaches the model through the backend, at the relation's row
+        // and at an item of it alike.
+        let mut session = view.open_document(&note).unwrap();
+        let part_of = [Seg::Key("part_of".into())];
+        let choices = session
+            .metadata()
+            .choices_at(&part_of)
+            .expect("the workspace answered");
+        assert_eq!(
+            choices.iter().map(|c| &c.value).collect::<Vec<_>>(),
+            offered.iter().map(|c| &c.value).collect::<Vec<_>>()
+        );
+
+        // Choosing one commits the reference text into the document.
+        session.metadata_mut().focus_on(&part_of);
+        session.metadata_mut().begin_choose();
+        while session
+            .metadata()
+            .choice_selected()
+            .is_some_and(|c| c.label != "The Vault")
+        {
+            session.metadata_mut().choose_next();
+        }
+        session.metadata_mut().choose_commit();
+        let out = session.reassemble().unwrap();
+        assert!(
+            out.contains("part_of: '[The Vault](/README.md)'")
+                || out.contains("part_of: \"[The Vault](/README.md)\""),
+            "the chosen reference was written:\n{out}"
+        );
+
+        // A field with a vocabulary is answered by the schema and never reaches
+        // the backend: `audience` is a closed prov vocabulary here, and its
+        // terms are what the picker shows.
+        let audience = [Seg::Key("audience".into()), Seg::Index(0)];
+        let terms: Vec<String> = session
+            .metadata()
+            .choices_at(&audience)
+            .expect("the vocabulary answered")
+            .iter()
+            .map(|c| c.label.clone())
+            .collect();
+        assert_eq!(
+            terms,
+            ["private", "public"],
+            "the vocabulary, not the documents"
+        );
+
+        // A field that is neither has nothing to pick from at all.
+        assert!(
+            session
+                .metadata()
+                .choices_at(&[Seg::Key("title".into())])
+                .is_none()
+        );
     }
 
     /// The three answers a follow actually has: a document that is there, a

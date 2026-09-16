@@ -96,9 +96,12 @@ pub use schema::{Vocabularies, schema_for_document, schema_from_config};
 pub use session::{DocumentSession, Heading, SessionError, annotations_of};
 pub use workspace::{Destination, WorkspaceView, reference_here, reference_without_workspace};
 
+use std::collections::HashMap;
+
 use fig::Value;
+use flower_core::schema::FieldRuleExt;
 use flower_core::tree::{self, to_fig};
-use flower_core::{Backend, BackendError, EditOp, Schema, Seg};
+use flower_core::{Backend, BackendError, Choice, EditOp, Schema, Seg};
 use prov::edit::MetaEditor;
 use prov::{Document, MetaCarrier};
 
@@ -141,6 +144,16 @@ pub struct ProvBackend {
     /// [`Backend::schema`] so the flower model validates values and a frontend can
     /// pick schema-driven widgets. `None` for a bare document with no workspace.
     schema: Option<Schema>,
+    /// What a picker on a reference field should offer, per **relation** — the
+    /// answer to [`Backend::candidates`], injected because this backend cannot
+    /// work it out.
+    ///
+    /// Empty by default, which is the honest state of a backend over a document
+    /// with no workspace behind it: there is nothing to enumerate, and flower
+    /// opens a text line instead
+    /// ([`Model::begin_choose`](flower_core::Model::begin_choose) falls back).
+    /// See [`set_candidates`](Self::set_candidates).
+    candidates: HashMap<String, Vec<Choice>>,
 }
 
 impl ProvBackend {
@@ -172,7 +185,12 @@ impl ProvBackend {
         let text = text.into();
         // Fail fast if the document doesn't parse.
         Document::parse(&path, &text).map_err(be)?;
-        Ok(Self { path, text, schema })
+        Ok(Self {
+            path,
+            text,
+            schema,
+            candidates: HashMap::new(),
+        })
     }
 
     fn document(&self) -> Result<Document, BackendError> {
@@ -203,6 +221,53 @@ impl ProvBackend {
             self.document()?.carrier,
             Some(MetaCarrier::Fenced(_))
         ))
+    }
+
+    /// Tell the backend what a picker on each **relation**'s field should
+    /// offer — the injection [`Backend::candidates`] exists for.
+    ///
+    /// A reference field's candidates are *other documents*, and this backend is
+    /// one document with a path: it can say which relation a path is, from the
+    /// schema it is already carrying, and nothing about what else exists. So the
+    /// list arrives from whoever has a workspace —
+    /// [`WorkspaceView::candidates_map`] builds one, and
+    /// [`WorkspaceView::open_document`] hands it over at open.
+    ///
+    /// ## What it costs, and when it is paid
+    ///
+    /// Enumerating a workspace's documents is a **walk**. It is paid once, when
+    /// the map is built, and never again: this is a lookup by relation name
+    /// against an owned map, so the picker opens in constant time however many
+    /// times it is opened. A census per open, never per keystroke. The
+    /// staleness that buys is the staleness a per-document check already has — a
+    /// document created in another window is not on the list until this one is
+    /// reopened — and it is the right trade for a key pressed on a keystroke.
+    ///
+    /// Keyed by relation rather than by path so that `contents`, `contents[4]`
+    /// and the append position `contents[len]` are one entry: the schema rule at
+    /// each of those names the same relation, and a list of link targets does
+    /// not change because the index did.
+    ///
+    /// Replaces the whole map; an empty one puts the backend back where it
+    /// started.
+    pub fn set_candidates(&mut self, candidates: HashMap<String, Vec<Choice>>) {
+        self.candidates = candidates;
+    }
+
+    /// The relation a metadata `path` is a reference for, according to the
+    /// schema this backend carries — `None` for a path that is not a reference
+    /// field, and for a backend with no schema.
+    ///
+    /// **A reified vocabulary answers `None` here, and that is the point.** A
+    /// key that is both a declared field with a vocabulary and a relation gets
+    /// two rules from [`schema_from_config`], the field's first; a schema
+    /// resolves first-match-wins, so the rule at that path is the
+    /// [`Enum`](flower_core::Constraint::Enum) and flower answers the picker
+    /// from the vocabulary's own terms without asking a backend at all. Reading
+    /// the same rule here is what keeps the two from disagreeing — there is no
+    /// second precedence rule written down anywhere.
+    pub fn relation_at(&self, path: &[Seg]) -> Option<&str> {
+        self.schema.as_ref()?.rule_for(path)?.reference()
     }
 
     /// Replace the prose body, leaving the metadata block untouched — the write
@@ -336,6 +401,21 @@ impl Backend for ProvBackend {
         };
         let path = to_fig(path);
         comment_read(with_fig!(&editor, |e| e.trailing_comment(&path)))
+    }
+
+    /// The documents a picker on this reference field should offer — whatever
+    /// [`set_candidates`](Self::set_candidates) was given for the relation the
+    /// schema says `path` is.
+    ///
+    /// `None` for anything that is not a reference field, for a relation the map
+    /// has no entry for, and always for a backend outside a workspace. A
+    /// controlled vocabulary never reaches here: flower asks its own schema
+    /// first — see [`relation_at`](Self::relation_at).
+    fn candidates(&self, path: &[Seg]) -> Result<Option<Vec<Choice>>, BackendError> {
+        Ok(self
+            .relation_at(path)
+            .and_then(|relation| self.candidates.get(relation))
+            .cloned())
     }
 }
 
