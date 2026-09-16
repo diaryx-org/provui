@@ -33,6 +33,7 @@ use leaf_core::{Doc, Format as BodyFormat};
 use prov::{Document, MetaCarrier};
 
 use crate::ProvBackend;
+use crate::body_links::BodyLink;
 
 /// The answer for a document whose metadata block does not resolve — a `&Value`
 /// to hand back without an allocation or an `Option` every caller would unwrap
@@ -234,6 +235,43 @@ impl DocumentSession {
     /// The body editor.
     pub fn body(&self) -> &Doc {
         &self.body
+    }
+
+    /// The grammar the body is written in, as **prov** spells it.
+    ///
+    /// leaf's `Format` is twig's, which is the wider list — it also names XML
+    /// and AsciiDoc, which prov has no content format for. Anything outside
+    /// prov's three reads as Markdown, which is the same fallback
+    /// [`DocumentSession::open`] applies on the way in, so the answer here is
+    /// the format the body was actually parsed under rather than a second
+    /// guess at it.
+    pub fn body_format(&self) -> prov::ContentFormat {
+        match self.body.format {
+            BodyFormat::Djot => prov::ContentFormat::Djot,
+            BodyFormat::Html => prov::ContentFormat::Html,
+            _ => prov::ContentFormat::Markdown,
+        }
+    }
+
+    /// Every link the prose body declares, as it stands.
+    ///
+    /// Parsed on each call rather than cached: the body is a live buffer, and a
+    /// cached span list is one edit away from pointing at the wrong bytes.
+    /// Following a link is a keystroke, not a frame, so one twig parse of one
+    /// document's prose is the right price for an answer that is never stale.
+    pub fn body_links(&self) -> Result<Vec<BodyLink>, SessionError> {
+        crate::body_links::body_links(&self.body.source, self.body_format())
+    }
+
+    /// The body link the caret is standing inside, if any — the body pane's
+    /// half of "the row under the cursor, is that a link?".
+    ///
+    /// leaf keeps the caret as a byte offset into the same buffer the spans are
+    /// measured in ([`leaf_core::Doc::caret`]), so the two meet without a
+    /// conversion.
+    pub fn body_link_at_caret(&self) -> Result<Option<BodyLink>, SessionError> {
+        let links = self.body_links()?;
+        Ok(crate::body_links::body_link_at(&links, self.body.caret).cloned())
     }
 
     pub fn body_mut(&mut self) -> &mut Doc {

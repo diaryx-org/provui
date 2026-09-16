@@ -31,9 +31,14 @@
 //!   at machinery, identity, policy, a declared field, or a value prov only
 //!   carries. Read off the workspace's own vocabulary rather than a list this
 //!   crate keeps.
-//! - [`links`] — the links a document declares, each with the metadata **path**
-//!   it sits at, so "is the row under the cursor a link?" is a question with an
-//!   answer. Lexical: no filesystem, no registry.
+//! - [`links`] — the links a document's *frontmatter* declares, each with the
+//!   metadata **path** it sits at, so "is the row under the cursor a link?" is a
+//!   question with an answer. Lexical: no filesystem, no registry.
+//! - [`mod@body_links`] — the same question of the *prose*, answered with a byte
+//!   range into the body instead of a metadata path. Both kinds carry a
+//!   [`prov::Link`] and a [`TargetKind`], and [`AnyLink`] is what lets one
+//!   resolver answer for both — so following a link from the body caret and
+//!   following one from the metadata cursor are the same code.
 //! - [`workspace`] — [`WorkspaceView`], which finds the workspace a document
 //!   belongs to and resolves a link to a document you can open. The one piece
 //!   that reads the filesystem, and read-only.
@@ -59,6 +64,7 @@
 //! relationship-aware backend, not this one. Following a link reads; retargeting
 //! one would write two documents, and this crate's backend edits one.
 
+pub mod body_links;
 pub mod config_schema;
 pub mod facets;
 pub mod links;
@@ -67,9 +73,10 @@ pub mod schema;
 mod session;
 pub mod workspace;
 
+pub use body_links::{BodyLink, body_link_at, body_links};
 pub use config_schema::{CONFIG_READONLY_KEYS, config_schema};
 pub use facets::{Facet, Facets};
-pub use links::{MetaLink, TargetKind, link_at, links_in, links_under};
+pub use links::{AnyLink, MetaLink, TargetKind, link_at, links_in, links_under};
 pub use schema::{Vocabularies, schema_for_document, schema_from_config};
 pub use session::{DocumentSession, SessionError};
 pub use workspace::{Destination, WorkspaceView};

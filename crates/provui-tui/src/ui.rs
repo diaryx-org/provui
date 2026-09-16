@@ -323,15 +323,15 @@ fn dim() -> Style {
 /// instead gives up the most guessable chords first: everyone knows `^S` saves,
 /// and nobody guesses that `^G` follows a link.
 ///
-/// The list is per pane because the keys are. Following is the metadata cursor's
-/// gesture and means nothing from the body, so the body's list does not offer
-/// it.
+/// The list is the same in both panes, because the keys now are: `^G` follows
+/// the metadata row in one and the link under the caret in the other, so there
+/// is no pane it means nothing in. `focus` stays an argument because the list
+/// being per pane is a property of *this* host worth keeping cheap to restore.
 fn hints(focus: Focus, room: usize) -> Option<String> {
+    let _ = focus;
     // Least worth keeping first — the order this drops in.
     let mut hints = vec!["^S save"];
-    if matches!(focus, Focus::Metadata) {
-        hints.push(&FOLLOW_HINT);
-    }
+    hints.push(&FOLLOW_HINT);
     hints.push(&PANE_HINT);
     hints.push("^Q quit");
 

@@ -39,7 +39,7 @@ use prov::{
 };
 
 use crate::facets::Facets;
-use crate::links::MetaLink;
+use crate::links::AnyLink;
 use crate::schema::Vocabularies;
 use crate::session::{DocumentSession, SessionError};
 
@@ -332,8 +332,12 @@ impl WorkspaceView {
     /// does not, because resolving one needs a title index over the whole
     /// workspace and that is a scan an editor should not do behind a keystroke.
     /// Use [`resolve_nominal`](Self::resolve_nominal) to pay for it deliberately.
-    pub fn resolve(&self, doc: &Path, link: &MetaLink) -> Destination {
-        self.destination(self.ws.resolve_link(&self.relative(doc), &link.link), link)
+    ///
+    /// Generic over [`AnyLink`], which is what lets a link written in the prose
+    /// body resolve through exactly this code: where a link *sits* is the one
+    /// thing resolution never asks about.
+    pub fn resolve(&self, doc: &Path, link: &impl AnyLink) -> Destination {
+        self.destination(self.ws.resolve_link(&self.relative(doc), link.link()), link)
     }
 
     /// [`resolve`](Self::resolve), also resolving nominal targets against a
@@ -347,12 +351,12 @@ impl WorkspaceView {
     pub fn resolve_nominal(
         &self,
         doc: &Path,
-        link: &MetaLink,
+        link: &impl AnyLink,
     ) -> Result<Destination, SessionError> {
         let index = block_on(self.ws.title_index()).map_err(we)?;
         let target = self
             .ws
-            .resolve_link_with(&self.relative(doc), &link.link, Some(&index));
+            .resolve_link_with(&self.relative(doc), link.link(), Some(&index));
         Ok(self.destination(target, link))
     }
 
@@ -374,7 +378,7 @@ impl WorkspaceView {
     /// by syntax and has nothing further to say about it, so its answer is the
     /// bare fact of externality. A status line that then has to tell a reader
     /// their link went nowhere has nothing to name.
-    fn destination(&self, target: Target, link: &MetaLink) -> Destination {
+    fn destination(&self, target: Target, link: &impl AnyLink) -> Destination {
         match target {
             Target::Path(rel) => {
                 let path = self.ws.fs_path(&rel);
@@ -416,10 +420,10 @@ impl WorkspaceView {
 /// guessing at the filesystem root or at the document's directory — both of
 /// which would sometimes open the wrong file, silently. An `id:` target is the
 /// same story with a registry in place of a root.
-pub fn resolve_without_workspace(doc: &Path, link: &MetaLink) -> Destination {
+pub fn resolve_without_workspace(doc: &Path, link: &impl AnyLink) -> Destination {
     use crate::links::TargetKind;
 
-    match &link.kind {
+    match link.kind() {
         TargetKind::SameDocument => Destination::SameDocument,
         TargetKind::External => Destination::External(link.target().to_string()),
         TargetKind::Foreign { workspace } => Destination::Foreign {
@@ -542,7 +546,7 @@ fn same_file(a: &Path, b: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::links::links_in;
+    use crate::links::{MetaLink, links_in};
     use flower_core::Seg;
 
     /// A three-document workspace on disk: a root, a child it contains, and a

@@ -104,10 +104,67 @@ impl MetaLink {
     }
 }
 
+/// A link, wherever it was written — the shape [`crate::WorkspaceView`] resolves.
+///
+/// Resolution needs exactly two things from a link: the parsed [`Link`] prov
+/// reads the target off, and the [`TargetKind`] that says whether there is
+/// anything to resolve at all. Neither is a fact about *where* the link sits, so
+/// neither [`MetaLink`]'s metadata path nor [`BodyLink`]'s byte span appears
+/// here — and a body link consequently resolves through the same code a
+/// frontmatter link does, in a workspace or without one.
+///
+/// [`BodyLink`]: crate::BodyLink
+pub trait AnyLink {
+    /// The parsed link: label, target, wrapper.
+    fn link(&self) -> &Link;
+
+    /// What shape of thing the target names, by syntax.
+    fn kind(&self) -> &TargetKind;
+
+    /// The target as written, locator and all.
+    fn target(&self) -> &str {
+        &self.link().target
+    }
+
+    /// Whether following this link would leave the workspace — a URL, or a
+    /// reference into a workspace prov cannot locate from here.
+    fn leaves_the_workspace(&self) -> bool {
+        matches!(
+            self.kind(),
+            TargetKind::External | TargetKind::Foreign { .. }
+        )
+    }
+}
+
+impl AnyLink for MetaLink {
+    fn link(&self) -> &Link {
+        &self.link
+    }
+
+    fn kind(&self) -> &TargetKind {
+        &self.kind
+    }
+}
+
+impl AnyLink for crate::BodyLink {
+    fn link(&self) -> &Link {
+        &self.link
+    }
+
+    fn kind(&self) -> &TargetKind {
+        &self.kind
+    }
+}
+
 /// Classify a target string by syntax. The order matters: `id:` handles are
 /// checked before anything else because `id:ajp7eq` is also a syntactically
 /// valid relative path, and prov reads the scheme first.
-fn kind_of(link: &Link) -> TargetKind {
+///
+/// Crate-visible rather than private because [`crate::body_links`] classifies a
+/// prose link with it: the same target written in `contents` and written in a
+/// paragraph is the same target, and two copies of this would be two chances to
+/// disagree about `id:`.
+pub(crate) fn kind_of(link: &Link) -> TargetKind {
     if link.is_same_document() {
         return TargetKind::SameDocument;
     }

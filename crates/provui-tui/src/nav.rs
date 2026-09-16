@@ -36,16 +36,24 @@ use std::path::{Path, PathBuf};
 use provui_core::facets::Facets;
 use provui_core::links::MetaLink;
 use provui_core::workspace::{Destination, WorkspaceView, resolve_without_workspace};
-use provui_core::{DocumentSession, SessionError, link_at};
+use provui_core::{BodyLink, DocumentSession, SessionError, link_at};
 
 /// What is under the cursor, when the follow key is pressed.
+///
+/// One enum for both panes, because a follow means the same thing in each: the
+/// thing under the cursor is a link or it is not, and if it is, it lands
+/// somewhere. Which pane asked survives only in which variant carries the link,
+/// and that is there so a host can *describe* what it followed — the
+/// [`Destination`] beside it is identical either way.
 pub enum Follow {
     /// The metadata pane has no cursor — an empty document.
     NoCursor,
-    /// There is a row, and it is not a link.
+    /// There is a row, or a caret in prose, and it is not a link.
     NotALink,
-    /// A link, and where it lands.
+    /// A frontmatter link, and where it lands.
     Lands(Box<MetaLink>, Destination),
+    /// A prose link, and where it lands.
+    BodyLands(Box<BodyLink>, Destination),
 }
 
 /// The workspace, the way back, and this host's arrangement policy.
@@ -153,6 +161,28 @@ impl Nav {
             None => resolve_without_workspace(session.path(), &link),
         };
         Follow::Lands(Box::new(link), landing)
+    }
+
+    /// Where the link under the **body caret** would take you.
+    ///
+    /// The prose sibling of [`follow`](Self::follow), and deliberately the same
+    /// shape: a body link resolves through the same `WorkspaceView::resolve`
+    /// a frontmatter link does (they are both `AnyLink`s), so a `[[../a.md]]`
+    /// in a paragraph and an `[[../a.md]]` in `contents` land in the same place.
+    ///
+    /// Fallible where [`follow`](Self::follow) is not, because reading the
+    /// links out of the body means parsing the prose, and a parse is a thing
+    /// that can fail. A caret standing in ordinary prose is
+    /// [`NotALink`](Follow::NotALink), which is an answer and not an error.
+    pub fn follow_in_body(&self, session: &DocumentSession) -> Result<Follow, SessionError> {
+        let Some(link) = session.body_link_at_caret()? else {
+            return Ok(Follow::NotALink);
+        };
+        let landing = match &self.workspace {
+            Some(ws) => ws.resolve(session.path(), &link),
+            None => resolve_without_workspace(session.path(), &link),
+        };
+        Ok(Follow::BodyLands(Box::new(link), landing))
     }
 
     /// Open `to`, remembering `from` so [`back`](Self::back) can return.

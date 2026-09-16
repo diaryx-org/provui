@@ -63,6 +63,15 @@ handling and nothing else.
   editor additionally needs is *where* each one is, so that "the row under the
   cursor — is that a link?" is a question with an answer. Lexical throughout: no
   filesystem, no registry, no claim anything exists.
+- **`body_links`** — the same question asked of the *prose*, answered with a
+  byte range into the body instead of a metadata path. The scan is prov's own
+  (`scan_body_links`, the seam its census, check and rename all use), so it is
+  code-aware, reaches into footnote definitions, and never mistakes bracket
+  prose for a link — three bugs a second implementation here would have had to
+  find again. The two halves share a target and nothing else, and `AnyLink` is
+  what that sharing is called: `WorkspaceView::resolve` takes either, so a
+  `[[a.md]]` in a paragraph and an `[[a.md]]` in `contents` land in the same
+  place by construction rather than by agreement.
 - **`WorkspaceView`** — the step that needs a workspace to take it in. It finds
   the workspace a document belongs to, resolves the effective config and the
   vocabularies it points at, and turns a link into a document you can open —
@@ -235,7 +244,7 @@ strand a half-typed value in a pane no longer taking keys — and says so.
 |---|---|
 | `^W` | switch panes |
 | `^S` | save the document — **both** regions, from either pane |
-| `^G` | follow the link under the metadata cursor |
+| `^G` | follow the link under the cursor — the metadata row, or the body link the caret is inside |
 | `^O` | back to the document you followed from |
 | `^Q` | quit; refused once while there are unsaved changes |
 | body pane | leaf's keys (`leaf --help`) |
@@ -243,23 +252,36 @@ strand a half-typed value in a pane no longer taking keys — and says so.
 
 ### Following links
 
-Some of a prov document's frontmatter keys are links, and a workspace is what
-makes them resolvable. **`^G` opens the document the metadata cursor is standing
-on** and **`^O` returns**, which makes this a two-key browser over the spanning
-tree: `^G` on `part_of` goes up, `^G` on a `contents` item goes down.
+A prov document carries links in both of its regions. Some frontmatter keys are
+links, and so is a `[label](target)` or a `[[target]]` written in the prose; a
+workspace is what makes either resolvable. **`^G` opens the document the focused
+pane's cursor is on** and **`^O` returns**, which makes this a two-key browser
+over the whole document graph: `^G` on `part_of` goes up, `^G` on a `contents`
+item goes down, and `^G` with the caret inside a link in a paragraph goes
+wherever the prose pointed.
 
 Both are taken before the widgets for the same reason `^W` is, and both are free
 in leaf's Ctrl table — `^G` for *go*, `^O` for the jump-back every vi has. The
 back chord is advertised in the status line on arrival rather than in the
 standing hints, which is exactly when there is something to go back to.
 
-Following is the **metadata pane's** gesture: from the body there is no row to be
-standing on, and following whatever the other pane was last left on would be a
-guess, so the host says so instead. A row that is not a link says that too, and
-so does a link that lands somewhere that is not a file you can open — a URL, a
-`#locator` into this document, a reference into a workspace prov cannot locate,
-or a target that is simply not on disk. Each of those is a real answer rather
-than a failure, and the status line gives it.
+**Each pane follows its own cursor, and never the other's.** A body caret in the
+middle of a paragraph is no evidence about which frontmatter row was last
+selected, and following one from the other would be the host guessing. So the
+metadata pane follows the row it is standing on, the body pane follows the link
+the caret is *inside* — half-open, so a caret just past the closing bracket is
+past the link — and a cursor on neither says `no link under the caret` or `not a
+link` rather than picking something.
+
+A link that lands somewhere that is not a file you can open says that too — a
+URL, a `#locator` into this document, a reference into a workspace prov cannot
+locate, or a target that is simply not on disk. Each of those is a real answer
+rather than a failure, and the status line gives it.
+
+Images are not followed. An `![alt](pic.png)` is one of prov's body links, but
+it names a payload rather than a document, and opening a picture in a text
+editor is not what the chord promises; prov's own census leaves them out for the
+same reason.
 
 Leaving a document with **unsaved changes is refused**, with no second-press
 escape hatch. Quitting has one because quitting twice discards work you were

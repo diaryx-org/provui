@@ -37,12 +37,14 @@
 //!
 //! ## Following links
 //!
-//! A prov document's frontmatter is not only values: some of its keys are
-//! *links*, and a workspace is what makes them resolvable. [`FOLLOW_CHORD`]
-//! opens the document the metadata cursor is standing on and [`BACK_CHORD`]
-//! returns, which makes this a two-key browser over the spanning tree. Both are
-//! taken before the widgets for the reason `^W` is, and both are free in leaf's
-//! Ctrl table — `^G` for *go*, `^O` for the jump-back every vi has.
+//! A prov document carries links in both of its regions: some frontmatter keys
+//! are *links*, and so is a `[a](b.md)` or a `[[b.md]]` in the prose.
+//! [`FOLLOW_CHORD`] opens whichever of the two the focused pane's cursor is on
+//! — the metadata row, or the link the body caret is inside — and
+//! [`BACK_CHORD`] returns, which makes this a two-key browser over the whole
+//! document graph rather than over the spanning tree alone. Both are taken
+//! before the widgets for the reason `^W` is, and both are free in leaf's Ctrl
+//! table — `^G` for *go*, `^O` for the jump-back every vi has.
 //!
 //! Everything about *what* a link is belongs to `provui-core`; everything about
 //! what this host does with the answer belongs to [`nav`]. See that module for
@@ -70,7 +72,8 @@ use ratatui::layout::{Position, Rect};
 /// why it is this one.
 pub const FOCUS_CHORD: &str = "^W";
 
-/// Open the document the metadata cursor's link points at. Free in leaf's Ctrl
+/// Open the document the link under the cursor points at — the metadata row in
+/// one pane, the link the caret is inside in the other. Free in leaf's Ctrl
 /// table, and *go* is what it does.
 pub const FOLLOW_CHORD: &str = "^G";
 
@@ -177,7 +180,7 @@ usage: provui <file>
 keys:
     ^W              switch panes
     ^S              save the document (both regions, from either pane)
-    ^G              follow the link under the metadata cursor
+    ^G              follow the link under the cursor (either pane)
     ^O              back to the document you followed from
     ^Q              quit
     body pane       leaf's keys — see `leaf --help`
@@ -374,28 +377,42 @@ fn save(session: &mut DocumentSession, app: &mut App) {
     }
 }
 
-/// Open the document the metadata cursor's link points at.
+/// Open the document the link under the cursor points at, in either pane.
 ///
-/// The cursor is the metadata pane's, so this only means anything there — from
-/// the body pane there is no row to be standing on, and saying so beats
-/// following whatever the metadata pane happened to be left on.
+/// Each pane has its own cursor and its own kind of link, and the chord means
+/// the same thing in both: the metadata pane follows the row it is standing on,
+/// the body pane follows the link the caret is inside. What it must *not* do is
+/// follow the other pane's cursor — a body caret in the middle of a paragraph is
+/// not evidence about which frontmatter row was last selected, and following one
+/// from the other would be this host guessing.
 fn follow(session: &mut DocumentSession, app: &mut App, screen: Rect) {
-    if app.focus != Focus::Metadata {
-        app.status = Some(format!(
-            "following is the metadata pane's ({FOCUS_CHORD} to switch)"
-        ));
-        return;
-    }
-    let landing = match app.nav.follow(session) {
+    let found = match app.focus {
+        Focus::Metadata => app.nav.follow(session),
+        Focus::Body => match app.nav.follow_in_body(session) {
+            Ok(found) => found,
+            // Reading the prose's links means parsing the prose. A body this
+            // host cannot parse is worth saying out loud rather than reporting
+            // as "no link here", which would be the same message a caret in an
+            // ordinary paragraph gets.
+            Err(e) => {
+                app.status = Some(format!("reading the body's links: {e}"));
+                return;
+            }
+        },
+    };
+    let landing = match found {
         nav::Follow::NoCursor => {
             app.status = Some("nothing under the cursor".into());
             return;
         }
         nav::Follow::NotALink => {
-            app.status = Some("not a link — stand on a relation's target".into());
+            app.status = Some(match app.focus {
+                Focus::Metadata => "not a link — stand on a relation's target".into(),
+                Focus::Body => "no link under the caret".to_string(),
+            });
             return;
         }
-        nav::Follow::Lands(_, landing) => landing,
+        nav::Follow::Lands(_, landing) | nav::Follow::BodyLands(_, landing) => landing,
     };
     // A link that does not land on a file on disk is not a failure to report as
     // one: an external URL, a place inside this document and a broken target are
@@ -801,6 +818,11 @@ Original body.
     /// is still what drives them: `part_of` here is a *relative* target, which
     /// resolves lexically, so what these assert is this host's verbs rather than
     /// prov's discovery.
+    ///
+    /// The note reaches the root twice — once through `part_of` in the
+    /// frontmatter and once through a link in the prose — because the follow
+    /// chord now works from either pane and the two paths should land in the
+    /// same place.
     fn vault(name: &str) -> (PathBuf, PathBuf) {
         let dir = std::env::temp_dir().join(format!("provui_tui_{name}"));
         let _ = std::fs::remove_dir_all(&dir);
@@ -810,10 +832,25 @@ Original body.
         std::fs::write(&root, "---\ntitle: The Vault\n---\n# The Vault\n").unwrap();
         std::fs::write(
             &note,
-            "---\ntitle: A Note\npart_of: '[The Vault](README.md)'\nmood: rainy\n---\n# A Note\n\nProse.\n",
+            "---\ntitle: A Note\npart_of: '[The Vault](README.md)'\nmood: rainy\n---\n# A Note\n\nProse.\n\nSee [the vault](README.md).\n",
         )
         .unwrap();
         (dir, note)
+    }
+
+    /// Put the body caret at the first byte of `needle` in the prose.
+    ///
+    /// The caret is a byte offset into the same buffer the link spans are
+    /// measured in, which is the whole reason the body half of the follow
+    /// gesture needs no coordinate conversion — so a test can place one by
+    /// searching the source, exactly as leaf places one by clicking.
+    fn caret_at(session: &mut DocumentSession, needle: &str) {
+        let at = session
+            .body()
+            .source
+            .find(needle)
+            .unwrap_or_else(|| panic!("no {needle:?} in the body"));
+        session.body_mut().caret = at;
     }
 
     /// Stand on a metadata row the way the widget's own keys would leave the
@@ -873,6 +910,40 @@ Original body.
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// The same gesture from the other pane: a link written in the *prose*,
+    /// followed from the caret inside it.
+    ///
+    /// Worth its own test rather than a second assertion on the metadata one,
+    /// because the two reach the workspace by different routes — a metadata
+    /// path versus a byte span — and meet only at `WorkspaceView::resolve`.
+    /// That they land in the same place is the claim `AnyLink` makes.
+    #[test]
+    fn follows_the_body_link_under_the_caret_and_comes_back() {
+        let (dir, note) = vault("follow_body");
+        let nav = nav::Nav::none();
+        let mut session = nav.open(&note).unwrap();
+        let mut app = App::new(&session, nav);
+        begin(&mut session, &app, SCREEN);
+        assert_eq!(app.focus, Focus::Body, "the prose has the keyboard");
+
+        // Inside the label, not on the bracket: where a reader who has just
+        // clicked the words of a link actually is.
+        caret_at(&mut session, "the vault](README.md)");
+        on_key(&mut session, &mut app, ctrl('g'));
+        assert!(
+            session.path().ends_with("README.md"),
+            "followed the prose link"
+        );
+        assert_eq!(app.name, "README.md");
+        assert_eq!(app.nav.depth(), 1);
+
+        on_key(&mut session, &mut app, ctrl('o'));
+        assert!(session.path().ends_with("note.md"), "and back again");
+        assert_eq!(app.nav.depth(), 0);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Following is a *reading* gesture, so unlike quitting it has no
     /// second-press escape hatch: an edit is never lost to one.
     #[test]
@@ -913,17 +984,13 @@ Original body.
         let mut app = App::new(&session, nav);
         begin(&mut session, &app, SCREEN);
 
-        // From the body there is no metadata cursor to be standing on, and
-        // following whatever the other pane was left on would be a guess.
+        // From the body, with the caret in the heading: the pane has a cursor
+        // and it is not on a link, which is the same answer a metadata row
+        // that is not a link gets.
         assert_eq!(app.focus, Focus::Body);
+        caret_at(&mut session, "# A Note");
         on_key(&mut session, &mut app, ctrl('g'));
-        assert!(
-            app.status
-                .as_deref()
-                .is_some_and(|s| s.contains("metadata")),
-            "{:?}",
-            app.status
-        );
+        assert_eq!(app.status.as_deref(), Some("no link under the caret"));
 
         stand_on(&mut session, &mut app, "mood");
         on_key(&mut session, &mut app, ctrl('g'));
