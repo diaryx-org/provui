@@ -28,6 +28,12 @@ release on goes up through `publish.yml`.
 
 <!-- git-cliff:begin — generated; edits here are overwritten -->
 
+_No commits since the last tag._
+
+<!-- git-cliff:end -->
+
+## v0.4.0 — 2026-09-16
+
 ### Added
 
 - **core** — follow the links a document's prose declares, not only its frontmatter ([`8109b05`](https://github.com/diaryx-org/provui/commit/8109b05a755e5a8b53cd5c0311569777971dd186))
@@ -66,7 +72,6 @@ without it.
 and `undo()` a no-op — the behaviour it had before this existed — so nothing
 breaks, but a host that wants undo must call it once per event.
 
-<!-- git-cliff:end -->
 
 ## v0.3.0 — 2026-09-14
 
