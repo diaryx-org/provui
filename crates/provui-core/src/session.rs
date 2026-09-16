@@ -13,6 +13,21 @@
 //! current text is spliced back into the document (leaving the metadata edits in
 //! place), and the reassembled bytes are written to disk.
 //!
+//! ## One undo over two histories
+//!
+//! Each editor keeps its own history and neither knows the other exists, so the
+//! session keeps a **journal of which one took each step** — nothing more. A
+//! host calls [`sync_history`](DocumentSession::sync_history) once per event
+//! loop, which reads both editors' change counters and records whichever moved;
+//! [`undo`](DocumentSession::undo) pops the most recent entry and calls that
+//! editor's own undo. So "body edit, metadata edit, body edit" undoes in that
+//! order, and the *meaning* of a step stays with the editor that owns the bytes.
+//!
+//! A workspace-maintained key still refuses its undo, because flower replays the
+//! inverse through the same backend the edit went through. And leaf still
+//! decides its own step boundaries: see `sync_history` for the one limit that
+//! follows from that.
+//!
 //! A workspace [`Schema`](flower_core::Schema) can be supplied at open
 //! (`*_with_schema`) so the metadata model validates controlled fields and offers
 //! pickers; without one the session behaves exactly as a schema-free editor.
@@ -94,6 +109,32 @@ pub struct DocumentSession {
     /// while the metadata half has nowhere to go yet — see
     /// [`meta_findings`](DocumentSession::meta_findings).
     findings: Vec<Finding>,
+    /// Which editor took each step, oldest first — the order
+    /// [`undo`](DocumentSession::undo) walks back through. See
+    /// [`sync_history`](DocumentSession::sync_history).
+    journal: Vec<Region>,
+    /// The steps [`undo`](DocumentSession::undo) has taken back, most recent
+    /// last. Cleared by the next fresh edit in either region.
+    redo_journal: Vec<Region>,
+    /// leaf's [`revision`](leaf_core::Doc::revision) as of the last
+    /// [`sync_history`](DocumentSession::sync_history).
+    seen_body: u64,
+    /// flower's [`edit_seq`](flower_core::Model::edit_seq) as of the last
+    /// [`sync_history`](DocumentSession::sync_history).
+    seen_meta: u64,
+}
+
+/// Which of a session's two editors a history step belongs to.
+///
+/// The whole of the session's journal: an ordered list of these is what makes
+/// one undo out of two independent histories, and neither editor learns that
+/// the other exists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Region {
+    /// The prose body — a [`leaf_core::Doc`] step.
+    Body,
+    /// The metadata — a [`flower_core::Model`] step.
+    Meta,
 }
 
 /// The grammar a document's body is written in, from its path.
@@ -232,12 +273,16 @@ impl DocumentSession {
         let saved_body = body.source.clone();
 
         Ok(Self {
+            seen_body: body.revision(),
+            seen_meta: metadata.edit_seq(),
             path,
             metadata,
             body,
             has_body,
             saved_body,
             findings: Vec::new(),
+            journal: Vec::new(),
+            redo_journal: Vec::new(),
         })
     }
 
@@ -494,6 +539,220 @@ impl DocumentSession {
             .find(|f| matches!(&f.site, Site::Meta(at) if at == path))
     }
 
+    // ── one history over two editors ─────────────────────────────────────
+
+    /// Notice whatever either editor has just done, and record which one did
+    /// it. **The host calls this once per event-loop iteration**, after
+    /// dispatching the event and before reading the next.
+    ///
+    /// ## Why it is polled rather than pushed
+    ///
+    /// Neither editor has an edit *entry point* the session could wrap. A
+    /// keystroke reaches leaf through `leaf_ratatui::handle_key` and flower
+    /// through `flower_ratatui::handle_key`, both of which take the editor
+    /// directly, and a host holding [`body_mut`](Self::body_mut) and
+    /// [`metadata_mut`](Self::metadata_mut) can edit through either without
+    /// passing through anything of this crate's. What both editors *do* expose
+    /// is a counter that moves on every change and on nothing else —
+    /// [`Doc::revision`](leaf_core::Doc::revision) and
+    /// [`Model::edit_seq`](flower_core::Model::edit_seq) — so the session reads
+    /// those instead of asking the host to remember to tell it. A host that
+    /// forgets to call this loses undo; it cannot get the *order* wrong, which
+    /// is the failure worth designing against.
+    ///
+    /// ## The known limit
+    ///
+    /// **leaf coalesces keystrokes into steps on its own schedule.** Typing a
+    /// word moves the revision once per character, and twig may hold the whole
+    /// word as a single undo step. So a [`Region::Body`] journal entry is not a
+    /// leaf step, and a count of entries is not a count of undos: what
+    /// [`undo`](Self::undo) does is take **one leaf step**, never a keystroke,
+    /// and then drop whatever further `Body` entries leaf has nothing left to
+    /// answer for before it reaches the next `Meta` one. That is what keeps the
+    /// *ordering* exact — body, then metadata, then body undoes in that order —
+    /// while leaving the granularity to the editor that owns the bytes, which
+    /// is the only component that can decide it.
+    ///
+    /// flower has no such coalescing: one commit is one step.
+    ///
+    /// A fresh edit in either region clears the redo journal, the way a fresh
+    /// edit clears either editor's own.
+    pub fn sync_history(&mut self) {
+        let revision = self.body.revision();
+        if revision != self.seen_body {
+            self.seen_body = revision;
+            self.journal.push(Region::Body);
+            self.redo_journal.clear();
+        }
+        let seq = self.metadata.edit_seq();
+        if seq != self.seen_meta {
+            self.seen_meta = seq;
+            self.journal.push(Region::Meta);
+            self.redo_journal.clear();
+        }
+    }
+
+    /// The steps recorded so far, oldest first — what
+    /// [`sync_history`](Self::sync_history) has seen. For a frontend drawing a
+    /// history, and for a test asserting the order.
+    pub fn journal(&self) -> &[Region] {
+        &self.journal
+    }
+
+    /// Whether there is a step to take back. See [`undo`](Self::undo) for why
+    /// this is not `!journal().is_empty()`.
+    ///
+    /// A hint, in the direction hints should err: it can say yes where the body
+    /// entries left are all coalesced away, because leaf's own `can_undo` is a
+    /// step counter rather than its history — see [`undo`](Self::undo). It
+    /// never says no while there is something to take back, which is the half a
+    /// greyed-out menu item needs to be right about.
+    pub fn can_undo(&self) -> bool {
+        self.journal.iter().rev().any(|r| self.has_undo(*r))
+    }
+
+    /// Whether there is an undone step to put back.
+    pub fn can_redo(&self) -> bool {
+        self.redo_journal.iter().rev().any(|r| self.has_redo(*r))
+    }
+
+    /// Take back the most recent step, in whichever editor made it.
+    ///
+    /// The journal says which editor, and that editor's own undo says what —
+    /// `Doc::undo` for the body, `Model::undo` for the metadata. Neither is
+    /// reimplemented here and neither is second-guessed: flower replays an
+    /// inverse op through the same `Backend::apply` the edit went through, so a
+    /// workspace-maintained key refuses its undo exactly as it refuses its
+    /// edit, and a refusal here is a refusal that leaves the journal as it was.
+    ///
+    /// **Entries leaf has nothing to answer for are dropped, not pressed.**
+    /// Because leaf coalesces (see [`sync_history`](Self::sync_history)), eight
+    /// `Body` entries may face one leaf step: the first `undo` spends the step
+    /// and the next one walks past the remaining seven to the `Meta` entry
+    /// underneath. Without that, a reader would press the key seven times for
+    /// nothing before the metadata edit came back.
+    ///
+    /// `true` when something was undone.
+    pub fn undo(&mut self) -> bool {
+        while let Some(region) = self.journal.pop() {
+            if !self.has_undo(region) {
+                continue;
+            }
+            let before = self.counters();
+            // flower's undo says whether the document moved; leaf's does not.
+            // The counters below answer that for both, so neither is asked.
+            match region {
+                Region::Body => self.body.undo(),
+                Region::Meta => {
+                    self.metadata.undo();
+                }
+            }
+            if self.counters() != before {
+                self.mark_seen();
+                self.redo_journal.push(region);
+                return true;
+            }
+            if self.nothing_happened(region) {
+                return false;
+            }
+        }
+        false
+    }
+
+    /// What a step that changed nothing means, which is not the same thing in
+    /// the two editors — and `true` when it means the caller should stop.
+    ///
+    /// **flower's `history_len`/`redo_len` are its actual journals**, so a
+    /// history move that changes nothing there is a *refusal*: a
+    /// workspace-maintained key declining its own undo, which flower reports in
+    /// its status. A refusal has to stop the walk. Reaching past it for an
+    /// older edit would undo something the reader did not ask about, in answer
+    /// to a key press that was answered "no".
+    ///
+    /// **leaf's `can_undo`/`can_redo` are step *counters*,** incremented once
+    /// per edit where twig coalesces several into one step — so they can say
+    /// yes when there is nothing left. A body move that changes nothing is
+    /// therefore an exhausted run rather than a refusal, and the walk carries on
+    /// to the next entry, which is what keeps a metadata edit from being
+    /// stranded behind a word someone typed. (A genuinely read-only body would
+    /// read the same way, and correctly: there is nothing there to take back.)
+    fn nothing_happened(&mut self, region: Region) -> bool {
+        match region {
+            Region::Body => {
+                self.mark_seen();
+                false
+            }
+            Region::Meta => {
+                self.journal.push(region);
+                true
+            }
+        }
+    }
+
+    /// Put back the most recently undone step, in the editor that made it — the
+    /// mirror of [`undo`](Self::undo), exhaustion-skipping and refusals
+    /// included.
+    ///
+    /// `true` when something was redone.
+    pub fn redo(&mut self) -> bool {
+        while let Some(region) = self.redo_journal.pop() {
+            if !self.has_redo(region) {
+                continue;
+            }
+            let before = self.counters();
+            match region {
+                Region::Body => self.body.redo(),
+                Region::Meta => {
+                    self.metadata.redo();
+                }
+            }
+            if self.counters() != before {
+                self.mark_seen();
+                self.journal.push(region);
+                return true;
+            }
+            match region {
+                Region::Body => self.mark_seen(),
+                Region::Meta => {
+                    self.redo_journal.push(region);
+                    return false;
+                }
+            }
+        }
+        false
+    }
+
+    /// Whether `region`'s editor has a step to take back.
+    fn has_undo(&self, region: Region) -> bool {
+        match region {
+            Region::Body => self.has_body && self.body.can_undo(),
+            Region::Meta => self.metadata.history_len() > 0,
+        }
+    }
+
+    /// Whether `region`'s editor has an undone step to put back.
+    fn has_redo(&self, region: Region) -> bool {
+        match region {
+            Region::Body => self.has_body && self.body.can_redo(),
+            Region::Meta => self.metadata.redo_len() > 0,
+        }
+    }
+
+    /// Both editors' change counters, for telling a step that happened from one
+    /// that was declined.
+    fn counters(&self) -> (u64, u64) {
+        (self.body.revision(), self.metadata.edit_seq())
+    }
+
+    /// Take the counters as read without journalling — what an undo or a redo
+    /// does, since both editors count their own history moves as changes and a
+    /// step back is not a new step.
+    fn mark_seen(&mut self) {
+        let (body, meta) = self.counters();
+        self.seen_body = body;
+        self.seen_meta = meta;
+    }
+
     /// `true` if the metadata or the body has unsaved edits.
     pub fn dirty(&self) -> bool {
         self.metadata.dirty || (self.has_body && self.body.source != self.saved_body)
@@ -638,6 +897,146 @@ And what it costs.
         let heading = session.heading_at_caret().expect("under a heading");
         assert_eq!(heading.level, 2);
         assert_eq!(session.locator_at_caret().as_deref(), Some("the-hard-part"));
+    }
+
+    /// One undo across two editors, in the order the edits were actually made.
+    ///
+    /// The composition's real claim: leaf and flower each keep their own
+    /// history and neither knows the other exists, so a reader pressing undo
+    /// three times should walk back through body, metadata, body — not through
+    /// one editor's history and then the other's.
+    #[test]
+    fn one_undo_walks_back_through_both_editors_in_order() {
+        const DOC: &str = "---\ntitle: Old Title\n---\n# Heading\n\nOriginal body.\n";
+        let mut session =
+            DocumentSession::from_text("note.md", DOC, BodyFormat::Markdown, None).unwrap();
+        let title = [Seg::Key("title".into())];
+        let meta_value = |s: &DocumentSession| {
+            s.meta()
+                .get("title")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        };
+
+        assert!(!session.can_undo(), "nothing has happened yet");
+
+        // Body, metadata, body — each followed by the sync a host does once
+        // per event-loop iteration.
+        session.body_mut().caret = 0;
+        session.body_mut().insert("first ");
+        session.sync_history();
+        session.set_metadata(&title, Value::Str("New Title".into()));
+        session.sync_history();
+        session.body_mut().insert("second ");
+        session.sync_history();
+
+        assert_eq!(
+            session.journal(),
+            [Region::Body, Region::Meta, Region::Body],
+            "who took each step"
+        );
+        assert!(session.can_undo());
+        assert!(!session.can_redo());
+        assert!(session.body().source.contains("second "));
+        assert_eq!(meta_value(&session).as_deref(), Some("New Title"));
+
+        // Back through them, newest first. Each step names one editor, and the
+        // other is untouched by it.
+        assert!(session.undo(), "the second body edit");
+        assert!(!session.body().source.contains("second "));
+        assert!(session.body().source.contains("first "));
+        assert_eq!(
+            meta_value(&session).as_deref(),
+            Some("New Title"),
+            "the metadata edit is not what was undone"
+        );
+
+        assert!(session.undo(), "the metadata edit");
+        assert_eq!(meta_value(&session).as_deref(), Some("Old Title"));
+        assert!(
+            session.body().source.contains("first "),
+            "and the body is where the last undo left it"
+        );
+
+        assert!(session.undo(), "the first body edit");
+        assert!(!session.body().source.contains("first "));
+        assert_eq!(meta_value(&session).as_deref(), Some("Old Title"));
+
+        assert!(!session.can_undo(), "back at the document that was opened");
+        assert!(!session.undo());
+
+        // And forward again, in the order they were made.
+        assert!(session.can_redo());
+        assert!(session.redo());
+        assert!(session.body().source.contains("first "));
+        assert_eq!(meta_value(&session).as_deref(), Some("Old Title"));
+
+        assert!(session.redo());
+        assert_eq!(meta_value(&session).as_deref(), Some("New Title"));
+
+        assert!(session.redo());
+        assert!(session.body().source.contains("second "));
+        assert!(!session.can_redo());
+
+        // A fresh edit closes the redo journal, the way it closes either
+        // editor's own.
+        session.undo();
+        assert!(session.can_redo());
+        session.set_metadata(&title, Value::Str("A Third Title".into()));
+        session.sync_history();
+        assert!(!session.can_redo(), "the branch that was not taken is gone");
+    }
+
+    /// leaf decides its own step boundaries, so a run of typing is some number
+    /// of journal entries and some smaller number of leaf steps. The session
+    /// undoes *one leaf step* and then walks past the entries leaf has nothing
+    /// left to answer for, rather than making a reader press the key once per
+    /// character for nothing.
+    #[test]
+    fn a_coalesced_run_of_typing_does_not_cost_a_keypress_per_character() {
+        const DOC: &str = "---\ntitle: Old Title\n---\n# Heading\n\nOriginal body.\n";
+        let mut session =
+            DocumentSession::from_text("note.md", DOC, BodyFormat::Markdown, None).unwrap();
+        session.set_metadata(&[Seg::Key("title".into())], Value::Str("New Title".into()));
+        session.sync_history();
+
+        session.body_mut().caret = 0;
+        for c in "typed".chars() {
+            session.body_mut().insert(&c.to_string());
+            session.sync_history();
+        }
+        assert_eq!(
+            session
+                .journal()
+                .iter()
+                .filter(|r| **r == Region::Body)
+                .count(),
+            5,
+            "one entry per character, because one revision per character"
+        );
+
+        // However many leaf steps those five characters became, walking the
+        // body back to where it started and then once more reaches the metadata
+        // edit — it is never stranded behind the run.
+        let mut presses = 0;
+        while session.body().source.starts_with("typed") {
+            assert!(session.undo(), "still something to take back");
+            presses += 1;
+            assert!(presses <= 5, "no more presses than there were characters");
+        }
+        eprintln!(
+            "JOURNAL {:?} hist={} presses={} body={:?}",
+            session.journal(),
+            session.metadata().history_len(),
+            presses,
+            &session.body().source[..20.min(session.body().source.len())]
+        );
+        assert!(session.undo(), "and the metadata edit is next, not buried");
+        assert_eq!(
+            session.meta().get("title").and_then(|v| v.as_str()),
+            Some("Old Title")
+        );
+        assert!(!session.can_undo());
     }
 
     /// The whole composition, end to end on disk: open → edit both regions →

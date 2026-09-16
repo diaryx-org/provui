@@ -81,6 +81,27 @@ pub const FOLLOW_CHORD: &str = "^G";
 /// likewise free in leaf's table.
 pub const BACK_CHORD: &str = "^O";
 
+/// Take back the last edit, in whichever pane made it — and `^Y` puts it
+/// back.
+///
+/// **The one pair that is intercepted in order to take it away from a widget
+/// rather than because no widget wanted it.** leaf binds `^Z`/`^⇧Z`/`^Y` for
+/// the body's own undo, and flower binds `u`/`U` for the metadata's. Left
+/// alone, undo would mean "the pane you are standing in", and a reader who
+/// edited the frontmatter, typed a sentence, and pressed undo twice would get
+/// two sentences back. The host takes the chord and asks the session, which
+/// knows which editor took each step — so undo is about the *document*, the way
+/// save already is.
+///
+/// Free by flower's half of the usual test: `z` and `y` are not bare letters it
+/// navigates on, so an un-intercepted one would reach it as a plain keypress and
+/// do nothing.
+pub const UNDO_CHORD: &str = "^Z";
+
+/// Put back the last thing [`UNDO_CHORD`] took. `^⇧Z` is the same key, which is
+/// the other spelling every editor has.
+pub const REDO_CHORD: &str = "^Y";
+
 /// Show the link text that would point at where the caret is — *r* for
 /// reference.
 ///
@@ -194,6 +215,8 @@ keys:
     ^G              follow the link under the cursor (either pane)
     ^O              back to the document you followed from
     ^R              show the link text that points at the caret
+    ^Z              undo — one history over both panes
+    ^Y  / ^⇧Z       redo
     ^Q              quit
     body pane       leaf's keys — see `leaf --help`
     metadata pane   j/k move · l/h in/out · e pick/edit · E type · x delete
@@ -338,7 +361,19 @@ fn is_chord(key: KeyEvent, letter: char) -> bool {
         && matches!(key.code, KeyCode::Char(c) if c.eq_ignore_ascii_case(&letter))
 }
 
+/// One key, start to finish — dispatched, and then noticed.
+///
+/// [`DocumentSession::sync_history`] runs after every event, whatever the event
+/// turned out to be: the session reads both editors' change counters rather than
+/// being told about an edit, so the only thing the host has to get right is
+/// calling this once per event. See that method for why it is polled.
 fn on_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent, screen: Rect) -> Flow {
+    let flow = dispatch_key(session, app, key, screen);
+    session.sync_history();
+    flow
+}
+
+fn dispatch_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent, screen: Rect) -> Flow {
     // A refusal is only ever an answer to the key that provoked it.
     let quit_armed = std::mem::take(&mut app.quit_armed);
     app.status = None;
@@ -357,6 +392,20 @@ fn on_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent, screen: R
     }
     if is_chord(key, 'r') {
         show_reference(session, app);
+        return Flow::Continue;
+    }
+    // `^⇧Z` is the other spelling of redo, and crossterm reports it as `^Z`
+    // with Shift — so the shifted case is tested before the plain one.
+    if is_chord(key, 'z') {
+        if key.modifiers.contains(KeyModifiers::SHIFT) {
+            history(session, app, false);
+        } else {
+            history(session, app, true);
+        }
+        return Flow::Continue;
+    }
+    if is_chord(key, 'y') {
+        history(session, app, false);
         return Flow::Continue;
     }
 
@@ -407,6 +456,35 @@ fn mid_edit_refusal(session: &DocumentSession) -> String {
     match session.metadata().mode {
         Mode::Choosing { .. } => "finish choosing first — Enter picks, Esc cancels".into(),
         _ => "finish the metadata edit first — Enter commits, Esc cancels".into(),
+    }
+}
+
+/// Walk the session's one history, in whichever direction.
+///
+/// Nothing is said when it works — the change is on the screen, in one pane or
+/// the other, and a message would be a second copy of it. What is worth saying
+/// is that the key did nothing, which a reader cannot otherwise tell from a
+/// change they were not looking at.
+///
+/// Refused mid-edit for the reason every other host gesture is: flower's
+/// buffer is the model's business until Enter or Esc, and an undo landing
+/// underneath a half-typed value would undo something the reader cannot see.
+fn history(session: &mut DocumentSession, app: &mut App, backwards: bool) {
+    if open_in_metadata(session) {
+        app.status = Some(mid_edit_refusal(session));
+        return;
+    }
+    let moved = if backwards {
+        session.undo()
+    } else {
+        session.redo()
+    };
+    if !moved {
+        app.status = Some(if backwards {
+            "nothing to undo".into()
+        } else {
+            "nothing to redo".into()
+        });
     }
 }
 
@@ -621,6 +699,11 @@ fn unhandled(outcome: leaf_ratatui::Outcome) -> &'static str {
 }
 
 fn on_mouse(session: &mut DocumentSession, app: &mut App, mouse: MouseEvent) {
+    dispatch_mouse(session, app, mouse);
+    session.sync_history();
+}
+
+fn dispatch_mouse(session: &mut DocumentSession, app: &mut App, mouse: MouseEvent) {
     let Some(panes) = app.panes else { return };
     let at = Position::new(mouse.column, mouse.row);
 
@@ -726,6 +809,11 @@ fn stand_on_row(model: &mut Model<ProvBackend>, i: usize) {
 }
 
 fn on_paste(session: &mut DocumentSession, app: &mut App, text: &str) {
+    dispatch_paste(session, app, text);
+    session.sync_history();
+}
+
+fn dispatch_paste(session: &mut DocumentSession, app: &mut App, text: &str) {
     match app.focus {
         Focus::Body => {
             app.status = None;
@@ -881,6 +969,84 @@ Original body.
         let reopened = DocumentSession::open(&path).unwrap();
         assert!(reopened.body().source.contains("Edited: "));
         assert!(!reopened.dirty());
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// One undo over both panes, driven through the host's chord.
+    ///
+    /// The point of taking `^Z` at the host: leaf binds it for the body's own
+    /// undo, so left alone it would mean "the pane you are standing in", and a
+    /// reader who edited the frontmatter between two runs of typing would get
+    /// the wrong thing back. Here the metadata edit is reached *from the body
+    /// pane*, in its place in the order, and `^Y` replays forward.
+    ///
+    /// Nothing here counts keypresses. leaf decides how many undo steps a run
+    /// of typing is — it may hold both runs as one — so the test presses until
+    /// the body is back and asserts what is in the document, which is the part
+    /// that is this host's to get right.
+    #[test]
+    fn undo_walks_back_through_both_panes_in_the_order_the_edits_were_made() {
+        let (path, mut session, mut app) = open("provui_tui_undo.md");
+        let shown = |session: &DocumentSession| {
+            session
+                .meta()
+                .get("title")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        };
+        let typed_body = |session: &DocumentSession| {
+            session.body().source.contains("first ") || session.body().source.contains("second ")
+        };
+
+        // Body, then metadata, then body — each through the widget that owns it.
+        typed(&mut session, &mut app, "first ");
+        on_key(&mut session, &mut app, ctrl('w'));
+        retype_metadata(&mut session, &mut app, "title", "New Title");
+        on_key(&mut session, &mut app, ctrl('w'));
+        typed(&mut session, &mut app, "second ");
+
+        assert!(session.body().source.contains("second "));
+        assert_eq!(shown(&session).as_deref(), Some("New Title"));
+        assert_eq!(app.focus, Focus::Body, "and the keyboard never leaves it");
+
+        // Back through the body's steps first, however many leaf made of them.
+        for _ in 0..32 {
+            if !typed_body(&session) {
+                break;
+            }
+            assert_eq!(on_key(&mut session, &mut app, ctrl('z')), Flow::Continue);
+        }
+        assert!(!typed_body(&session), "the body is back where it started");
+        assert_eq!(
+            shown(&session).as_deref(),
+            Some("New Title"),
+            "and the metadata edit is still standing — it came first"
+        );
+
+        // The next one reaches it, from the body pane: undo is about the
+        // document, the way save already is.
+        on_key(&mut session, &mut app, ctrl('z'));
+        assert_eq!(shown(&session).as_deref(), Some("Old Title"));
+        assert_eq!(app.focus, Focus::Body);
+
+        // Past the end it says so rather than doing something.
+        app.status = None;
+        on_key(&mut session, &mut app, ctrl('z'));
+        assert_eq!(app.status.as_deref(), Some("nothing to undo"));
+        assert_eq!(shown(&session).as_deref(), Some("Old Title"));
+
+        // And forward again, oldest undone first: the metadata edit, then the
+        // typing that was on top of it.
+        on_key(&mut session, &mut app, ctrl('y'));
+        assert_eq!(shown(&session).as_deref(), Some("New Title"));
+        for _ in 0..32 {
+            if typed_body(&session) {
+                break;
+            }
+            on_key(&mut session, &mut app, ctrl('y'));
+        }
+        assert!(typed_body(&session), "the typing came back too");
 
         let _ = std::fs::remove_file(&path);
     }

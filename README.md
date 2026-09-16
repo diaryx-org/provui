@@ -35,7 +35,8 @@ handling and nothing else.
   way to enumerate a workspace) and what a **list item is**, across a reorder
   (`item_key` — a link's target, which survives a relabel).
 - **`DocumentSession`** — one open prov document, edited through a flower
-  metadata model *and* a leaf body editor, reconciled on save. The two regions
+  metadata model *and* a leaf body editor, reconciled on save — with **one undo
+  across both**, kept as a journal of which editor took each step. The two regions
   share no byte offsets, so they edit independently and meet only at `save`,
   which splices the body back in and writes the reassembled document. A disk
   round-trip test (`open_edit_save_reopen_round_trip_on_disk`) proves open →
@@ -271,9 +272,60 @@ strand a half-typed value in a pane no longer taking keys — and says so.
 | `^G` | follow the link under the cursor — the metadata row, or the body link the caret is inside |
 | `^O` | back to the document you followed from |
 | `^R` | show the link text that points at the caret |
+| `^Z` | undo — **one** history over both panes |
+| `^Y` / `^⇧Z` | redo |
 | `^Q` | quit; refused once while there are unsaved changes |
 | body pane | leaf's keys (`leaf --help`) |
 | metadata pane | `j`/`k` move · `l`/`h` in/out · `e` pick or edit · `E` type · `x` delete |
+
+### One undo, over two editors
+
+Each editor keeps its own history: leaf's is twig's, flower's is a journal of
+inverse ops. Neither knows the other exists, which is right — and it means that
+left alone, undo would mean *the pane you are standing in*. A reader who typed a
+sentence, fixed a frontmatter value, typed another sentence and pressed undo
+twice would get two sentences back and keep the metadata edit.
+
+So `^Z` and `^Y` are taken by the host, before either widget — and unlike `^W`,
+`^G`, `^O` and `^R`, they are taken **in order to take them away from a widget**
+rather than because no widget wanted them. leaf binds `^Z`/`^⇧Z`/`^Y` for the
+body, and flower binds `u`/`U` for the metadata; the host's chord asks the
+*session* instead, and gets undo that is about the document the way save already
+is.
+
+`DocumentSession` keeps the whole of what makes that work: **a journal of which
+editor took each step**, and nothing else. The host calls `sync_history()` once
+per event, which reads both editors' change counters (`Doc::revision`,
+`Model::edit_seq`) and records whichever moved; `undo()` pops the most recent
+entry and calls that editor's own undo. Neither editor is reimplemented and
+neither is second-guessed: a workspace-maintained key still refuses its undo,
+because flower replays the inverse through the same backend the edit went
+through.
+
+It is polled rather than pushed because there is nothing to wrap. A keystroke
+reaches leaf and flower through their own `handle_key`, and a host holding
+`body_mut()` and `metadata_mut()` can edit through either without passing
+through this crate. A counter both editors already expose is the seam that
+needed no cooperation. A host that forgets to call `sync_history` loses undo; it
+cannot get the *order* wrong, which is the failure worth designing against.
+
+**The one limit is leaf's to set, and it is stated rather than papered over.**
+leaf coalesces keystrokes into steps on its own schedule, so a `Body` journal
+entry is not a leaf step and a count of entries is not a count of undos. What
+`undo()` does is take *one leaf step* — never a keystroke — and then walk past
+whatever further `Body` entries leaf has nothing left to answer for, so a
+metadata edit is never stranded behind a word someone typed. flower has no such
+coalescing: one commit is one step.
+
+That asymmetry is also why a body step that changes nothing and a metadata step
+that changes nothing mean different things. flower's `history_len` is its actual
+journal, so nothing happening there is a *refusal* and stops the walk; leaf's
+`can_undo` is a step counter that can overshoot a coalesced run, so nothing
+happening there is exhaustion and the walk carries on.
+
+flower's own `u`/`U` still reach the metadata pane and move only flower's
+history. The session records those as fresh `Meta` steps, which is what flower
+itself says an undo is — "a change, not a rewind".
 
 ### Picking a link instead of typing one
 

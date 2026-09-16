@@ -93,7 +93,7 @@ pub use facets::{Facet, Facets};
 pub use findings::{Finding, Severity, Site};
 pub use links::{AnyLink, MetaLink, TargetKind, link_at, links_in, links_under};
 pub use schema::{Vocabularies, schema_for_document, schema_from_config};
-pub use session::{DocumentSession, Heading, SessionError, annotations_of};
+pub use session::{DocumentSession, Heading, Region, SessionError, annotations_of};
 pub use workspace::{Destination, WorkspaceView, reference_here, reference_without_workspace};
 
 use std::collections::HashMap;
