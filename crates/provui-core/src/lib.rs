@@ -417,6 +417,42 @@ impl Backend for ProvBackend {
             .and_then(|relation| self.candidates.get(relation))
             .cloned())
     }
+
+    /// What an item of a relation's list *is*, across a reorder: the document it
+    /// points at.
+    ///
+    /// A path addresses a sequence item by position, so a reorder re-points
+    /// every path after the item that moved — a page opened on `contents[1]`
+    /// goes on showing `contents[1]`, which is now a different document. A
+    /// link's **target** survives that, and survives a relabel with it:
+    /// `[The Vault](/README.md)` and `[Home](/README.md)` are one edge with a
+    /// different word on it, and the word is the part a reader edits. So a
+    /// reorder moves the page with the item, and retitling the item does not
+    /// move it at all.
+    ///
+    /// [`Link::addressed_target`](prov::Link::addressed_target), so the
+    /// `#locator` is stripped: `a.md#one` and `a.md#two` are one identity, and
+    /// the first of them wins — which is [`Backend::item_key`]'s documented
+    /// behaviour for a repeated key rather than a loss. Two items pointing into
+    /// the same document are two ways of saying where to look, and a page that
+    /// lands on the first has landed in the right document.
+    ///
+    /// `None` for a list that is not a relation's, for an item that is not a
+    /// scalar, and for an empty target. flower's own fallback — a mapping item's
+    /// title, a scalar's own text — is the better answer for those, and it is
+    /// what it uses when this declines.
+    fn item_key(&self, seq_path: &[Seg], index: usize) -> Result<Option<String>, BackendError> {
+        if self.relation_at(seq_path).is_none() {
+            return Ok(None);
+        }
+        let mut path = seq_path.to_vec();
+        path.push(Seg::Index(index));
+        let Some(Value::Str(text)) = tree::value_at(&self.to_value()?, &path).cloned() else {
+            return Ok(None);
+        };
+        let target = prov::Link::parse(&text).addressed_target().to_string();
+        Ok((!target.is_empty()).then_some(target))
+    }
 }
 
 #[cfg(test)]
@@ -628,6 +664,88 @@ Body prose.
                 .unwrap(),
             None
         );
+    }
+
+    /// A relation's list item is known by the document it points at, not by its
+    /// position and not by its label — so a reorder carries the page with the
+    /// item, and retitling the item does not move it at all.
+    ///
+    /// Driven through `Model`, which is the only caller that matters: it asks
+    /// the backend first and falls back to its own guess, and the fallback here
+    /// would be the item's whole text — which changes when the label does, and
+    /// is exactly the wrong answer.
+    #[test]
+    fn a_relations_item_is_identified_by_its_target_not_its_position_or_label() {
+        const INDEX: &str = "\
+---
+title: Index
+contents:
+- '[One](one.md)'
+- '[Two](two.md)'
+- '[Three](three.md)'
+tags:
+- alpha
+- beta
+---
+# Index
+";
+        let schema = schema_from_config(
+            &prov::config::WorkspaceConfig::default(),
+            &std::collections::BTreeMap::new(),
+        );
+        let backend = ProvBackend::open_with_schema("index.md", INDEX, schema).expect("open");
+        let mut model = Model::new(backend).expect("model");
+        let contents = [Seg::Key("contents".into())];
+
+        // The target, locator and label stripped — not the item's text.
+        assert_eq!(model.item_key(&contents, 0).as_deref(), Some("one.md"));
+        assert_eq!(model.item_key(&contents, 1).as_deref(), Some("two.md"));
+        assert_eq!(model.item_key(&contents, 2).as_deref(), Some("three.md"));
+
+        // A list that is not a relation's is flower's own business, and its
+        // answer is the scalar itself.
+        let tags = [Seg::Key("tags".into())];
+        assert_eq!(model.item_key(&tags, 0).as_deref(), Some("alpha"));
+
+        // Stand on the second item, in the page projection the widgets draw.
+        let second = [Seg::Key("contents".into()), Seg::Index(1)];
+        model.focus_on(&second);
+        assert_eq!(
+            model.page_item().map(|i| i.path.clone()),
+            Some(second.to_vec()),
+            "the cursor is on the item that was opened on"
+        );
+
+        // Move it up. The page cursor is now at index 0 — and it is the *same
+        // document*, which is the whole claim: without an identity the cursor
+        // would have stayed on index 1 and be looking at `one.md`.
+        model.move_selected_up();
+        let landed = model.page_item().expect("still on an item").path.clone();
+        assert_eq!(landed, [Seg::Key("contents".into()), Seg::Index(0)]);
+        assert_eq!(
+            model.item_key(&contents, 0).as_deref(),
+            Some("two.md"),
+            "the item moved, and the cursor moved with it"
+        );
+        assert_eq!(model.item_key(&contents, 1).as_deref(), Some("one.md"));
+
+        // Relabelling is not a move. The item's text changes entirely and its
+        // identity does not, so nothing re-points.
+        model.set_value_at(&landed, Value::Str("[The Second One](two.md)".into()));
+        assert_eq!(model.item_key(&contents, 0).as_deref(), Some("two.md"));
+        assert_eq!(
+            model.page_item().map(|i| i.path.clone()),
+            Some(landed),
+            "the cursor did not go looking for a document that never moved"
+        );
+
+        // A locator is not part of the identity: the item names a place inside
+        // a document, and the document is what the page is standing in.
+        model.set_value_at(
+            &[Seg::Key("contents".into()), Seg::Index(1)],
+            Value::Str("[One](one.md#a-heading)".into()),
+        );
+        assert_eq!(model.item_key(&contents, 1).as_deref(), Some("one.md"));
     }
 
     #[test]

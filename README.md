@@ -313,6 +313,27 @@ Choosing writes a value through the ordinary commit funnel, so everything that
 was already true of a typed value is still true of a chosen one: the schema
 validates it, a workspace-maintained key refuses it, and the splice is lossless.
 
+### Which item of a list is which
+
+A metadata path addresses a sequence item by *position*, so reordering
+`contents` re-points every path after the item that moved: a page opened on
+`contents[1]` goes on showing `contents[1]`, which is now a different document.
+flower asks the backend for a stable identity instead (`Backend::item_key`), and
+for a relation's list `ProvBackend` answers with the link's **target**.
+
+That is the right identity for exactly the two edits a reader makes to a link
+list. A **reorder** carries the page and the cursor along with the item, because
+the target went with it. A **relabel** — `[The Vault](/README.md)` becoming
+`[Home](/README.md)` — moves nothing, because it is one edge with a different
+word on it and the word is the part being edited. flower's own fallback would
+have been the item's whole text, which changes when the label does.
+
+The `#locator` is stripped, so `a.md#one` and `a.md#two` are one identity and
+the first of them wins — `item_key`'s documented behaviour for a repeated key.
+Two items pointing into the same document are two ways of saying where to look,
+and a page that lands on the first has landed in the right document. A list that
+is not a relation's gets no answer here and keeps flower's own.
+
 ### Following links
 
 A prov document carries links in both of its regions. Some frontmatter keys are
