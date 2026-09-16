@@ -28,7 +28,23 @@ release on goes up through `publish.yml`.
 
 <!-- git-cliff:begin — generated; edits here are overwritten -->
 
-_No commits since the last tag._
+### Added
+
+- **core** — follow the links a document's prose declares, not only its frontmatter ([`8109b05`](https://github.com/diaryx-org/provui/commit/8109b05a755e5a8b53cd5c0311569777971dd186))
+- **core** — a link to here — the locator the caret is under, and the reference to write ([`c11733a`](https://github.com/diaryx-org/provui/commit/c11733aa80f5fce5116ba439b2a5977f5ff85a62))
+- **core** — a findings channel — prov's check, placed where an editor can draw it ([`9b95ed7`](https://github.com/diaryx-org/provui/commit/9b95ed712e22487262028ec877054bfa9006c38c))
+
+### Behavioural changes
+
+- `WorkspaceView::resolve`, `WorkspaceView::resolve_nominal`
+and `workspace::resolve_without_workspace` are generic over the new `AnyLink`
+trait instead of taking `&MetaLink`. Every call passing a `&MetaLink` still
+compiles unchanged; a caller that coerced one of them to a function pointer, or
+named its type, must now name the instantiation.
+
+- in `provui-tui`, `^G` from the body pane used to refuse with
+"following is the metadata pane's". It now follows the link under the body
+caret, and reports "no link under the caret" when there is none.
 
 <!-- git-cliff:end -->
 
