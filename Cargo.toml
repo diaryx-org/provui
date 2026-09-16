@@ -37,7 +37,7 @@ fig = "4"
 # The generic structural metadata editor. `ProvBackend` is an implementation of
 # its `Backend` trait; nothing here is upstreamed into it, because flower-core
 # does not know the word "prov" and should not learn it.
-flower-core = "0.5"
+flower-core = "0.6"
 # The rich-text body editor over twig. `default-features = false` so a consumer
 # that also links `leaf-ffi` unifies on one leaf-core copy and one twig-sys
 # build rather than two.
@@ -63,4 +63,4 @@ leaf-core = { version = "0.1.9", default-features = false }
 # without these checkouts — the patch is a local convenience and must never be
 # load-bearing for it.
 leaf-ratatui = "0.1.9"
-flower-ratatui = "0.5"
+flower-ratatui = "0.6"
