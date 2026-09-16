@@ -33,6 +33,10 @@ release on goes up through `publish.yml`.
 - **core** — follow the links a document's prose declares, not only its frontmatter ([`8109b05`](https://github.com/diaryx-org/provui/commit/8109b05a755e5a8b53cd5c0311569777971dd186))
 - **core** — a link to here — the locator the caret is under, and the reference to write ([`c11733a`](https://github.com/diaryx-org/provui/commit/c11733aa80f5fce5116ba439b2a5977f5ff85a62))
 - **core** — a findings channel — prov's check, placed where an editor can draw it ([`9b95ed7`](https://github.com/diaryx-org/provui/commit/9b95ed712e22487262028ec877054bfa9006c38c))
+- **core** — findings reach the rows, as flower annotations ([`142d3fb`](https://github.com/diaryx-org/provui/commit/142d3fb40346cdb1ffa0b9a6ef37d592144c1bb7))
+- **core** — the workspace's own documents, offered where a link is written ([`d2c7015`](https://github.com/diaryx-org/provui/commit/d2c701574e693ea3e1c35031203aea2a6aa4f9db))
+- **core** — a relation's list item is the document it points at ([`ce99584`](https://github.com/diaryx-org/provui/commit/ce99584ba2272db0bc994e1f9c8c265891c35193))
+- **core** — one undo across both editors, from a journal of who moved ([`477df56`](https://github.com/diaryx-org/provui/commit/477df56cd208feac870baa57e5a23881a7a0778a))
 
 ### Behavioural changes
 
@@ -45,6 +49,22 @@ named its type, must now name the instantiation.
 - in `provui-tui`, `^G` from the body pane used to refuse with
 "following is the metadata pane's". It now follows the link under the body
 caret, and reports "no link under the caret" when there is none.
+
+- `DocumentSession::apply_findings` now calls flower's
+  `Model::set_annotations` on the metadata model, replacing whatever annotation
+  list it was holding. A host that set its own annotations and also applies
+  findings now loses them at every `apply_findings`; it should compose one list
+  and call `set_annotations` itself.
+
+- `WorkspaceView::open_document` now walks the workspace to
+build the opened session's candidate lists. A caller opening many documents in a
+loop pays one walk each; `DocumentSession::open_with_schema` is the same open
+without it.
+
+- `DocumentSession` gains a history that only advances when
+`sync_history()` is called. A host that never calls it has `can_undo() == false`
+and `undo()` a no-op — the behaviour it had before this existed — so nothing
+breaks, but a host that wants undo must call it once per event.
 
 <!-- git-cliff:end -->
 
