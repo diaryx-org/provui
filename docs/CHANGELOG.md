@@ -32,6 +32,20 @@ _No commits since the last tag._
 
 <!-- git-cliff:end -->
 
+## v0.5.0 — 2026-09-17
+
+### Breaking
+
+- **core** — a finding's place and severity are prov's, not reconstructed ([`3fd344a`](https://github.com/diaryx-org/provui/commit/3fd344ad9e2b9520715a8f9fb3f8c8e9d5d24229))
+
+### Behavioural changes
+
+- a link finding on a list item whose target appears
+twice in the list is now placed on the exact row (`contents[3]`) where it
+was placed on the key alone. A finding prov adds takes prov's severity
+rather than defaulting to `Error`.
+
+
 ## v0.4.0 — 2026-09-16
 
 ### Added

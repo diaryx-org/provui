@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "provui-core"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "fig",
  "flower-core",
@@ -1010,7 +1010,7 @@ dependencies = [
 
 [[package]]
 name = "provui-tui"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "anyhow",
  "flower-core",
@@ -1959,7 +1959,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.4.0"
+version = "0.5.0"
 
 [[package]]
 name = "xterm-color"
@@ -2019,3 +2019,11 @@ checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core",
 ]
+
+[[patch.unused]]
+name = "plates"
+version = "0.7.0"
+
+[[patch.unused]]
+name = "plates-render"
+version = "0.7.0"

@@ -29,7 +29,7 @@ path = "src/main.rs"
 # The composition this is a frontend for. Everything about prov documents —
 # parsing, the two editors, the reconciling save — happens in here; this crate
 # only draws and routes keys.
-provui-core = { path = "../provui-core", version = "0.4.0" }
+provui-core = { path = "../provui-core", version = "0.5.0" }
 # Named directly for `Mode` (is the metadata pane mid-edit?) and `ViewMode` (the
 # page projection the widget draws), which are decisions a host makes.
 flower-core.workspace = true
