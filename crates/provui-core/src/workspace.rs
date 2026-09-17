@@ -533,29 +533,11 @@ impl WorkspaceView {
     pub fn findings_for(&self, doc: &Path) -> Result<Vec<Finding>, SessionError> {
         let rel = self.relative(doc);
         let found = block_on(self.ws.check(&rel)).map_err(we)?;
-        // Read once, for the relation-name → list-index refinement, and only if
-        // there is something to refine.
-        let links = if found.iter().any(|f| f.subject() == rel) {
-            self.links_of(&rel)
-        } else {
-            Vec::new()
-        };
         Ok(found
             .iter()
             .filter(|f| f.subject() == rel)
-            .map(|f| crate::findings::place(f, &rel, &links))
+            .map(|f| crate::findings::place(f, &rel))
             .collect())
-    }
-
-    /// The metadata links a document declares, for placing a finding. An
-    /// unreadable document has none, which is the state a finding about it is
-    /// already reporting.
-    fn links_of(&self, rel: &Path) -> Vec<crate::MetaLink> {
-        block_on(self.ws.read_text(rel))
-            .ok()
-            .and_then(|text| prov::Document::parse(rel, &text).ok())
-            .map(|doc| crate::links_in(&fig::Value::from(&doc.meta), &self.facets))
-            .unwrap_or_default()
     }
 
     /// Every inbound reference to `target`, walked from the workspace root.

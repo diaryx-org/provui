@@ -8,32 +8,27 @@
 //! one of its two panes.
 //!
 //! This module is that step. A [`Site`] is either a metadata path (the same
-//! `Vec<Seg>` a [`MetaLink`] and a flower row carry), a byte
+//! `Vec<Seg>` a [`MetaLink`](crate::MetaLink) and a flower row carry), a byte
 //! range in the body (the same coordinates [`crate::BodyLink`] and leaf's caret
 //! are in), or the document as a whole — for the findings that are about the
 //! file rather than about anything written in it.
 //!
-//! ## What is lost on the way, and where
+//! ## Nothing is lost on the way any more
 //!
-//! prov's `LinkSite::Relation` carries a field **name** and nothing more, so a
-//! broken third item of a `contents:` list arrives as "somewhere in `contents`".
-//! [`site_of`] recovers the index where it can, by matching the finding's target
-//! text against the links that key actually holds — which is exact whenever the
-//! list has no duplicate targets, and falls back to the key itself when it does.
-//! That is stated here rather than papered over: a frontend drawing a marker on
-//! `contents` rather than on `contents[2]` is drawing the truth prov gave it.
-//!
-//! prov has **no severity of its own**. The split below is this crate's, and it
-//! is a narrow one: the findings that are drift or advice rather than a broken
-//! structure are warnings, everything else is an error. It is a rendering hint —
-//! nothing is suppressed by it — and it lives in one list so a frontend does not
-//! grow its own.
+//! Two things this module used to reconstruct, prov now states. A
+//! `LinkSite::Relation` carries the list **index** beside the field name, so a
+//! broken third item of a `contents:` list arrives as `contents[2]` rather than
+//! as "somewhere in `contents`" — this module used to match the finding's
+//! target text against the document's own links to recover it, and gave up on
+//! a list naming one target twice. And a finding carries its own
+//! [severity](prov::Finding::severity), drawn on the same line this crate drew
+//! it — drift or advice is a warning, a broken structure is an error — so the
+//! list of warning kinds that lived here is gone with the reason for it. A
+//! finding prov adds arrives with prov's own judgement of how loud it is.
 
 use std::path::Path;
 
 use flower_core::Seg;
-
-use crate::links::MetaLink;
 
 /// Where in a document a finding sits.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,7 +46,8 @@ pub enum Site {
     Document,
 }
 
-/// How loudly to say it. prov draws no such line; see the module docs.
+/// How loudly to say it — prov's own line, restated as this crate's type so a
+/// frontend does not depend on prov to draw a marker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Severity {
     /// Something is broken: a link resolves to nothing, a closed vocabulary is
@@ -68,7 +64,7 @@ pub enum Severity {
 pub struct Finding {
     /// Where in the document it sits.
     pub site: Site,
-    /// This crate's rendering hint — see [`Severity`].
+    /// How loudly to say it — see [`Severity`].
     pub severity: Severity,
     /// prov's own sentence about it, with the leading `path: ` dropped where it
     /// was there: a per-document panel already knows which document it is
@@ -82,82 +78,54 @@ pub struct Finding {
     pub kind: &'static str,
 }
 
-/// The findings that are drift or advice rather than a broken structure.
-///
-/// Spelled as prov's own `kind` strings rather than as a match on the variants,
-/// so a kind prov adds lands in the `Error` half — which is the safe default:
-/// a new finding shown too loudly is noticed and fixed, one shown too quietly
-/// is not.
-const WARNING_KINDS: &[&str] = &[
-    // An open vocabulary admits new values; this only nudges toward an
-    // existing spelling. prov's own doc comment calls it a warning.
-    "term_near_miss",
-    // Resolves, but only case-insensitively — portable archives want the exact
-    // name, and nothing is broken on this machine.
-    "case_mismatch",
-    // An id link whose label no longer matches the target's title. The id is
-    // the real reference and still resolves; the label is decoration.
-    "stale_label",
-    // The document changed after it was confirmed. An edit after a review is
-    // the ordinary course of events, and prov calls it a demotion rather than
-    // an error.
-    "confirmation_stale",
-    // A config surface written by a newer prov. Nothing is broken here; the
-    // resolution is to upgrade prov, not to edit the workspace.
-    "config_spec_ahead",
-    // Diagnosis-only population reports about coverage that is no longer
-    // maintained. Both name a decision to make, not a breakage to repair.
-    "legacy_body_hash",
-    "legacy_deletions_pointer",
-];
-
 /// Place one of prov's findings, and translate it.
 ///
 /// `subject` is the document the finding is lodged against
 /// ([`Finding::subject`](prov::Finding::subject)), used to trim the message's
-/// path prefix. `links` is that document's metadata links, used to recover a
-/// list index from a bare relation name — pass an empty slice to skip the
-/// refinement and get the key alone.
-pub fn place(finding: &prov::Finding, subject: &Path, links: &[MetaLink]) -> Finding {
+/// path prefix.
+pub fn place(finding: &prov::Finding, subject: &Path) -> Finding {
     Finding {
-        site: site_of(finding, links),
-        severity: if WARNING_KINDS.contains(&finding.kind()) {
-            Severity::Warning
-        } else {
-            Severity::Error
+        site: site_of(finding),
+        severity: match finding.severity() {
+            prov::Severity::Warning => Severity::Warning,
+            prov::Severity::Error => Severity::Error,
         },
         message: trim_subject(&finding.to_string(), subject),
         kind: finding.kind(),
     }
 }
 
-/// Where a finding sits, with prov's relation name refined to a list index
-/// where the document's own links make that unambiguous.
-pub fn site_of(finding: &prov::Finding, links: &[MetaLink]) -> Site {
-    let Some((site, written)) = link_site(finding) else {
+/// Where a finding sits: the relation row — and the item in it, where prov
+/// counted one — or the body span, or the document.
+pub fn site_of(finding: &prov::Finding) -> Site {
+    let Some(site) = link_site(finding) else {
         return field_site(finding);
     };
     match site {
         prov::LinkSite::Body(span) => Site::Body(span.clone()),
-        prov::LinkSite::Relation(name) => Site::Meta(refine(name, written.as_deref(), links)),
+        prov::LinkSite::Relation { field, index } => {
+            let mut path = vec![Seg::Key(field.clone())];
+            if let Some(i) = index {
+                path.push(Seg::Index(*i));
+            }
+            Site::Meta(path)
+        }
     }
 }
 
-/// The link site a finding carries, and the target text it was written with —
-/// `None` for a finding that is not about a link at all.
-fn link_site(finding: &prov::Finding) -> Option<(&prov::LinkSite, Option<String>)> {
+/// The link site a finding carries — `None` for a finding that is not about a
+/// link at all.
+fn link_site(finding: &prov::Finding) -> Option<&prov::LinkSite> {
     use prov::Finding as F;
-    Some(match finding {
-        F::BrokenLink { site, target, .. }
-        | F::CaseMismatch { site, target, .. }
-        | F::MalformedId { site, target, .. }
-        | F::StaleLabel { site, target, .. } => (site, Some(target.clone())),
-        // The written target is `id:<id>` (or the legacy spelling, which this
-        // will simply fail to match — costing the index, not the finding).
-        F::DanglingId { site, id, .. } => (site, Some(prov::link::id_target(id))),
-        F::AmbiguousAlias { site, name, .. } => (site, Some(name.clone())),
-        _ => return None,
-    })
+    match finding {
+        F::BrokenLink { site, .. }
+        | F::CaseMismatch { site, .. }
+        | F::MalformedId { site, .. }
+        | F::StaleLabel { site, .. }
+        | F::DanglingId { site, .. }
+        | F::AmbiguousAlias { site, .. } => Some(site),
+        _ => None,
+    }
 }
 
 /// The metadata site of a finding that names a *field* rather than a link site,
@@ -170,27 +138,6 @@ fn field_site(finding: &prov::Finding) -> Site {
         }
         F::FieldScopeUnresolved { field, .. } => Site::Meta(vec![Seg::Key(field.clone())]),
         _ => Site::Document,
-    }
-}
-
-/// `[Key(relation)]`, narrowed to the item that was written where the
-/// document's links make that unambiguous.
-///
-/// A scalar relation is already exact. A list needs the target text to pick an
-/// item, and two items with the same target make the question unanswerable —
-/// in which case the key alone is the honest answer, and the caller draws the
-/// marker one level up.
-fn refine(relation: &str, written: Option<&str>, links: &[MetaLink]) -> Vec<Seg> {
-    let key = vec![Seg::Key(relation.to_string())];
-    let Some(written) = written else {
-        return key;
-    };
-    let mut matches = links
-        .iter()
-        .filter(|link| link.path.first() == key.first() && link.target() == written);
-    match (matches.next(), matches.next()) {
-        (Some(only), None) => only.path.clone(),
-        _ => key,
     }
 }
 

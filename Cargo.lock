@@ -921,9 +921,9 @@ dependencies = [
 
 [[package]]
 name = "prov"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f872d3e061ac88dfb3c3bed9bd5d757ce7b6ef7da94565bd6fe83461cf293cf"
+checksum = "e61397aaca4d70d8f8b237ccb25d33f0ca2e49229314ab9f2222594a63580327"
 dependencies = [
  "fig",
  "fig-schema",
@@ -940,9 +940,9 @@ dependencies = [
 
 [[package]]
 name = "prov-config"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b0f2470341a6e0f83bc19d529c55360f5d1255ff39d9c08acd3a2de982936901"
+checksum = "9d39345e608cdbfcf79ed1e350b4e459b09b52224af4ce86f3a94483ad66f352"
 dependencies = [
  "fig",
  "fig-schema",
@@ -955,9 +955,9 @@ dependencies = [
 
 [[package]]
 name = "prov-exports"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2024b35218ebeaf9fc9f98e6ea2a211c9340740ff26b87d854f775ed6dd289e6"
+checksum = "d5de30e81922aa8a0e64a745d2cc744d4e40907f575143e9f03fd27e5ef3ad8f"
 dependencies = [
  "prov-graph",
  "prov-views",
@@ -965,9 +965,9 @@ dependencies = [
 
 [[package]]
 name = "prov-graph"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "060005e86e4beac4a4934db5cbc1a1d32febb6bb4e2c1a0ccef9aa765a00e184"
+checksum = "b83201ad963f4f2a603c78ae9072a0bfe02dcad3fe719130a6f6e8f362f1e03e"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -980,9 +980,9 @@ dependencies = [
 
 [[package]]
 name = "prov-store"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d705af906f8097562fe98b0675289d3b0e043d549237024491775230efe61de"
+checksum = "624f766ad0f141444d822281c5e7794194ea20091ae570931d2d9df16a9e0124"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -991,9 +991,9 @@ dependencies = [
 
 [[package]]
 name = "prov-views"
-version = "0.13.0"
+version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "133ce80af9d6fddb52d519ade1ad28ec9e27a2284dcb6577039fcbbe49d0e5bf"
+checksum = "c314492e274068180cf8f109548d70ff230ada12cb2974c95f8503edf8f9e65e"
 dependencies = [
  "prov-graph",
 ]
@@ -2019,11 +2019,3 @@ checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core",
 ]
-
-[[patch.unused]]
-name = "leaf-core"
-version = "0.1.18"
-
-[[patch.unused]]
-name = "leaf-ffi"
-version = "0.1.18"
