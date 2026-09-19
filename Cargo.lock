@@ -285,6 +285,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "edtf-core"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9ce7075601dfd0cf8c5117a8ef452d748cbb8866194349d39177353e93ee1c0"
+
+[[package]]
+name = "edtf-normalize"
+version = "1.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3641adf5cb7c6b0d4c0a28df7394c03a374282335f27964d08f143c1db11c636"
+dependencies = [
+ "edtf-core",
+]
+
+[[package]]
 name = "either"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -921,10 +936,11 @@ dependencies = [
 
 [[package]]
 name = "prov"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e61397aaca4d70d8f8b237ccb25d33f0ca2e49229314ab9f2222594a63580327"
+checksum = "3f775356510df88d97329e527375bdc18a213f4dffd38d86cd5b1fd2265b7e29"
 dependencies = [
+ "edtf-normalize",
  "fig",
  "fig-schema",
  "fs-transaction",
@@ -940,9 +956,9 @@ dependencies = [
 
 [[package]]
 name = "prov-config"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d39345e608cdbfcf79ed1e350b4e459b09b52224af4ce86f3a94483ad66f352"
+checksum = "d760c99ee6b966966ff73a8fcdea1abb16ae480827679d061d544609bf5d21e9"
 dependencies = [
  "fig",
  "fig-schema",
@@ -955,9 +971,9 @@ dependencies = [
 
 [[package]]
 name = "prov-exports"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5de30e81922aa8a0e64a745d2cc744d4e40907f575143e9f03fd27e5ef3ad8f"
+checksum = "af53afb6d2c5a9e3657e1ba9ad5e2ac607f7bfab773e2546f323d16eb992e1e5"
 dependencies = [
  "prov-graph",
  "prov-views",
@@ -965,9 +981,9 @@ dependencies = [
 
 [[package]]
 name = "prov-graph"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b83201ad963f4f2a603c78ae9072a0bfe02dcad3fe719130a6f6e8f362f1e03e"
+checksum = "3446beb2ba02f177da9206c4019362659a7f48000f271f067e197936e0fccb9e"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -980,9 +996,9 @@ dependencies = [
 
 [[package]]
 name = "prov-store"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "624f766ad0f141444d822281c5e7794194ea20091ae570931d2d9df16a9e0124"
+checksum = "b128604aa7adeb24576322c6938ee0a077c5be213fa5a20ca714fe377ab7f268"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -991,11 +1007,13 @@ dependencies = [
 
 [[package]]
 name = "prov-views"
-version = "0.14.0"
+version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c314492e274068180cf8f109548d70ff230ada12cb2974c95f8503edf8f9e65e"
+checksum = "c89c246b8f85e27242935d42be7262e727a5fa669646abf39759bd5dffda2bea"
 dependencies = [
+ "edtf-core",
  "prov-graph",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -1680,6 +1698,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b09c83c3c29d37506a3e260c08c03743a6bb66a9cd432c6934ab501a190571f"
 
 [[package]]
+name = "unicode-normalization"
+version = "0.1.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8"
+dependencies = [
+ "tinyvec",
+]
+
+[[package]]
 name = "unicode-properties"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2019,11 +2046,3 @@ checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core",
 ]
-
-[[patch.unused]]
-name = "plates"
-version = "0.7.0"
-
-[[patch.unused]]
-name = "plates-render"
-version = "0.7.0"

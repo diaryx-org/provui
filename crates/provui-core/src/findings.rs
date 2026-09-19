@@ -29,6 +29,7 @@
 use std::path::Path;
 
 use flower_core::Seg;
+use prov::prov_graph::field::Step;
 
 /// Where in a document a finding sits.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -110,6 +111,23 @@ pub fn site_of(finding: &prov::Finding) -> Site {
             }
             Site::Meta(path)
         }
+        // A path-valued field (`type: ref`) at its concrete address —
+        // `sources[2].resource` — which prov parses back into the steps an
+        // editor path takes.
+        prov::LinkSite::Field { .. } => match site.address() {
+            Some(address) => Site::Meta(
+                address
+                    .steps()
+                    .iter()
+                    .map(|step| match step {
+                        Step::Key(key) => Seg::Key(key.clone()),
+                        Step::At(i) => Seg::Index(*i),
+                        Step::Each => unreachable!("an address has no `[]` step"),
+                    })
+                    .collect(),
+            ),
+            None => Site::Document,
+        },
     }
 }
 

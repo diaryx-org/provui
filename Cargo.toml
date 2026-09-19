@@ -29,7 +29,7 @@ readme = "README.md"
 # The self-describing plaintext workspace library. Defaults to `yaml` alone,
 # which is the carrier `---` frontmatter uses; a frontend that wants JSON/TOML
 # vaults turns those features on.
-prov = "0.14"
+prov = "0.15"
 # The Zig-backed config AST + lossless editor prov and flower are both built on.
 # Named directly because `ProvBackend` reaches for `fig::Embed::replace_body` and
 # `fig::Value`, which are the tree and the splice both halves agree on.
