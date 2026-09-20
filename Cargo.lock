@@ -351,7 +351,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -730,9 +730,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-core"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "22d09b50dd7859355aeb3610444b8676d5db32e8fd8c23b75916203c7001f475"
+checksum = "a76aeedb6b51ddd7b794b3d918b8f486a3de44c4866b92a4cd7948b9887494c0"
 dependencies = [
  "anyhow",
  "syntect",
@@ -744,9 +744,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-raster"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65cada27bd6efd784e1c12ef2ee7750387f919d223209d36ee655a876eddded5"
+checksum = "aa5f5a00230a4f0620151b908e93e6968aa39b482d1527416c37a3c2f8e24dee"
 dependencies = [
  "cosmic-text",
  "image",
@@ -755,9 +755,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-ratatui"
-version = "0.2.0"
+version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5adaaac65bb6bc3308be156693e7162ef04a1b3fa14e00f13146bb564c7258a6"
+checksum = "3efbdb50e0be7f195a9c8fdfea7551ff9bb395283c11ca87c4fb9635623c8bf2"
 dependencies = [
  "leaf-core",
  "leaf-raster",
@@ -989,6 +989,8 @@ dependencies = [
 [[package]]
 name = "prov"
 version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f775356510df88d97329e527375bdc18a213f4dffd38d86cd5b1fd2265b7e29"
 dependencies = [
  "edtf-normalize",
  "fig",
@@ -1007,6 +1009,8 @@ dependencies = [
 [[package]]
 name = "prov-config"
 version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d760c99ee6b966966ff73a8fcdea1abb16ae480827679d061d544609bf5d21e9"
 dependencies = [
  "fig",
  "fig-schema",
@@ -1020,6 +1024,8 @@ dependencies = [
 [[package]]
 name = "prov-exports"
 version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "af53afb6d2c5a9e3657e1ba9ad5e2ac607f7bfab773e2546f323d16eb992e1e5"
 dependencies = [
  "prov-graph",
  "prov-views",
@@ -1028,6 +1034,8 @@ dependencies = [
 [[package]]
 name = "prov-graph"
 version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3446beb2ba02f177da9206c4019362659a7f48000f271f067e197936e0fccb9e"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -1041,6 +1049,8 @@ dependencies = [
 [[package]]
 name = "prov-store"
 version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b128604aa7adeb24576322c6938ee0a077c5be213fa5a20ca714fe377ab7f268"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -1050,6 +1060,8 @@ dependencies = [
 [[package]]
 name = "prov-views"
 version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c89c246b8f85e27242935d42be7262e727a5fa669646abf39759bd5dffda2bea"
 dependencies = [
  "edtf-core",
  "prov-graph",
@@ -1058,7 +1070,7 @@ dependencies = [
 
 [[package]]
 name = "provui-core"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "fig",
  "flower-core",
@@ -1068,7 +1080,7 @@ dependencies = [
 
 [[package]]
 name = "provui-tui"
-version = "0.5.1"
+version = "0.5.2"
 dependencies = [
  "anyhow",
  "flower-core",
@@ -1695,18 +1707,18 @@ dependencies = [
 
 [[package]]
 name = "twig-doc"
-version = "3.6.0"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "723774797d5e2d33d0b19f21df0f9957a45dcb0f829f93a75c373e0b7afefd8d"
+checksum = "019252b19c5f7b86e0ffe712fe0cc9f0a85a08c7fe28d759c98c8a3d362e4b18"
 dependencies = [
  "twig-sys",
 ]
 
 [[package]]
 name = "twig-sys"
-version = "3.6.0"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84295ea876b6ada5b554811b9510898f4029cf3205c9f04e43856c0b775259c3"
+checksum = "ff6b1e0abd7283696d63cf985f6e52334d73fe963aff5f0392f35ac3d635ae39"
 dependencies = [
  "twig-sys-linux-arm64-gnu",
  "twig-sys-linux-x64-gnu",
@@ -1717,33 +1729,33 @@ dependencies = [
 
 [[package]]
 name = "twig-sys-linux-arm64-gnu"
-version = "3.6.0"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ca12ae37d67e50326632b8531cbadd90558481dcfb5e9aa25aea659673b138c0"
+checksum = "3a4f12d1ccfa938226a18872b7b84002be71b2b7f42ff1cb7fb196e358cc1857"
 
 [[package]]
 name = "twig-sys-linux-x64-gnu"
-version = "3.6.0"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9719fb377022a2cc7cfe34a049ffc3ea684904f8434d88562279ce4f51422b62"
+checksum = "ea1ff70a48d7b9eaaaeb7fdda6a54e8fe050205ff5a797d6239442455ce34dd4"
 
 [[package]]
 name = "twig-sys-macos-arm64"
-version = "3.6.0"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b418b78ef02e2deba3c87a300f97ad7f0f11b5b9fcfcac136d54327b32a35dc1"
+checksum = "a0bb165928a00b54377f7350ca0f1c64ad2cf8bced474426458148b3c8fbf49f"
 
 [[package]]
 name = "twig-sys-wasm32"
-version = "3.6.0"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b066155ec8a4261de9f9db3309afe9fbeb49a16a9058052f4ba44df6016d23d"
+checksum = "303bb750565ba66defadb95e7ac0721203cd4ea543d7f9e076531eff80306f79"
 
 [[package]]
 name = "twig-sys-windows-x64-msvc"
-version = "3.6.0"
+version = "3.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90b64b220fbfe0c3053fbb7145cfca13b924d6457d6ebee25ab16e1cd88a142d"
+checksum = "44f9a5b30d3651383e84df7fad4c11f6428a3664a6690a73dd5d56779e3e74a1"
 
 [[package]]
 name = "two-face"
@@ -1931,7 +1943,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2100,7 +2112,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.5.1"
+version = "0.5.2"
 
 [[package]]
 name = "xterm-color"
@@ -2160,11 +2172,3 @@ checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core",
 ]
-
-[[patch.unused]]
-name = "plates"
-version = "0.7.2"
-
-[[patch.unused]]
-name = "plates-render"
-version = "0.7.2"

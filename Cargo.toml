@@ -16,7 +16,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.5.1"
+version = "0.5.2"
 edition = "2024"
 # Edition 2024 needs 1.85; flower-core's floor is 1.88, and a dependency's floor
 # is this crate's floor.
@@ -41,7 +41,7 @@ flower-core = "0.6"
 # The rich-text body editor over twig. `default-features = false` so a consumer
 # that also links `leaf-ffi` unifies on one leaf-core copy and one twig-sys
 # build rather than two.
-leaf-core = { version = "0.2.0", default-features = false }
+leaf-core = { version = "0.3.1", default-features = false }
 
 # The two terminal widgets, which `provui-tui` embeds. Both are on crates.io and
 # are consumed from it, like everything else here; to build against a checkout
@@ -62,5 +62,5 @@ leaf-core = { version = "0.2.0", default-features = false }
 # requirement no registry can satisfy would make it unbuildable for anyone
 # without these checkouts — the patch is a local convenience and must never be
 # load-bearing for it.
-leaf-ratatui = "0.2.0"
+leaf-ratatui = "0.3.1"
 flower-ratatui = "0.6"
