@@ -32,6 +32,11 @@ _No commits since the last tag._
 
 <!-- git-cliff:end -->
 
+## v0.5.4 — 2026-09-21
+
+_No commits since the last tag._
+
+
 ## v0.5.3 — 2026-09-19
 
 _No commits since the last tag._
