@@ -152,6 +152,9 @@ pub struct App {
     /// taken at its word. Cleared by any other key, so it can only ever mean
     /// "you just asked, and I just said".
     quit_armed: bool,
+    /// Set by a save that was refused because the file changed on disk; the
+    /// next save overwrites it. Cleared by any other key, like `quit_armed`.
+    overwrite_armed: bool,
     /// The file name, for the two headers and the status line.
     pub name: String,
     /// The workspace, the way back, and this host's arrangement policy.
@@ -178,6 +181,7 @@ impl App {
             // workspace is the ordinary case and is drawn, not announced.
             status,
             quit_armed: false,
+            overwrite_armed: false,
             name: file_name(session.path()),
             nav,
             panes: None,
@@ -376,6 +380,7 @@ fn on_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent, screen: R
 fn dispatch_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent, screen: Rect) -> Flow {
     // A refusal is only ever an answer to the key that provoked it.
     let quit_armed = std::mem::take(&mut app.quit_armed);
+    let overwrite_armed = std::mem::take(&mut app.overwrite_armed);
     app.status = None;
 
     if is_chord(key, 'w') {
@@ -413,7 +418,7 @@ fn dispatch_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent, scr
         Focus::Metadata => match flower_ratatui::handle_key(session.metadata_mut(), key) {
             flower_ratatui::Outcome::Continue => Flow::Continue,
             flower_ratatui::Outcome::Save => {
-                save(session, app);
+                save(session, app, overwrite_armed);
                 Flow::Continue
             }
             flower_ratatui::Outcome::Quit => quit(session, app, quit_armed),
@@ -423,7 +428,7 @@ fn dispatch_key(session: &mut DocumentSession, app: &mut App, key: KeyEvent, scr
             match outcome {
                 leaf_ratatui::Outcome::Continue => Flow::Continue,
                 leaf_ratatui::Outcome::Save => {
-                    save(session, app);
+                    save(session, app, overwrite_armed);
                     Flow::Continue
                 }
                 leaf_ratatui::Outcome::Quit => quit(session, app, quit_armed),
@@ -506,12 +511,29 @@ fn switch_focus(session: &DocumentSession, app: &mut App) {
 
 /// The document is what a save writes: the metadata model's edits and the body
 /// buffer's, reconciled and written as one file, from whichever pane asked.
-fn save(session: &mut DocumentSession, app: &mut App) {
+///
+/// A save that would overwrite something else's write to the file is refused
+/// once, and the second save in a row is taken as meaning it — the same
+/// two-press shape as quitting with unsaved changes.
+fn save(session: &mut DocumentSession, app: &mut App, overwrite: bool) {
     // leaf's own `Doc::save`/`mark_saved` are deliberately not used: this body
     // is a *region* of a file rather than a file, the `Doc` has no path, and
     // dirtiness for the document as a whole is the session's answer to give.
-    match session.save() {
+    let result = if overwrite {
+        session.save_over()
+    } else {
+        session.save()
+    };
+    match result {
         Ok(()) => app.status = Some(format!("saved {}", app.name)),
+        Err(_) if session.changed_on_disk() => {
+            app.overwrite_armed = true;
+            app.status = Some(format!(
+                "{} changed on disk since it was opened — ^S again to overwrite it",
+                app.name
+            ));
+            return;
+        }
         Err(e) => {
             app.status = Some(format!("save failed: {e}"));
             return;
@@ -653,6 +675,7 @@ fn arrive(session: &mut DocumentSession, app: &mut App, screen: Rect) {
         Focus::Metadata
     };
     app.quit_armed = false;
+    app.overwrite_armed = false;
     // The same preparation the first document got: a fresh model is in the row
     // projection, not the page one, and has not skipped its lone drill row.
     begin(session, app, screen);
@@ -1423,6 +1446,37 @@ Original body.
         assert!(session.path().ends_with("note.md"));
 
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A file something else wrote while it was open is not overwritten by the
+    /// first `^S`; a second in a row means it, and a key in between disarms it.
+    #[test]
+    fn a_save_over_a_file_changed_on_disk_asks_first() {
+        let (path, mut session, mut app) = open("provui_tui_drift.md");
+        typed(&mut session, &mut app, "Mine ");
+        let theirs = std::fs::read_to_string(&path)
+            .unwrap()
+            .replace("Original body.", "Theirs.");
+        std::fs::write(&path, &theirs).unwrap();
+
+        on_key(&mut session, &mut app, ctrl('s'));
+        assert!(app.status.as_deref().unwrap().contains("changed on disk"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), theirs);
+
+        typed(&mut session, &mut app, "x");
+        on_key(&mut session, &mut app, ctrl('s'));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            theirs,
+            "a key in between disarms it"
+        );
+
+        on_key(&mut session, &mut app, ctrl('s'));
+        assert_eq!(app.status.as_deref(), Some("saved provui_tui_drift.md"));
+        assert!(std::fs::read_to_string(&path).unwrap().contains("Mine "));
+        assert!(!session.dirty());
+
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]

@@ -103,6 +103,11 @@ pub struct DocumentSession {
     has_body: bool,
     /// The body text as of the last open/save, for dirty tracking.
     saved_body: String,
+    /// The whole file as this session last read or wrote it — what a
+    /// [`save`](DocumentSession::save) expects to find on disk before it
+    /// replaces it. `None` for a session built [from text](DocumentSession::from_text),
+    /// which never saw the disk and so has nothing to hold it to.
+    on_disk: Option<String>,
     /// The findings most recently handed to
     /// [`apply_findings`](DocumentSession::apply_findings). Kept because the
     /// body half of them becomes leaf highlights the widget draws by itself,
@@ -219,7 +224,9 @@ impl DocumentSession {
         let format = body_format_of(&path);
         let text = std::fs::read_to_string(&path)
             .map_err(|e| SessionError(format!("reading {}: {e}", path.display())))?;
-        Self::build(path, &text, format, schema, derived)
+        let mut session = Self::build(path, &text, format, schema, derived)?;
+        session.on_disk = Some(text);
+        Ok(session)
     }
 
     /// Open a prov document from disk, parsing the body as `body_format`, with an
@@ -232,12 +239,17 @@ impl DocumentSession {
         let path = path.into();
         let text = std::fs::read_to_string(&path)
             .map_err(|e| SessionError(format!("reading {}: {e}", path.display())))?;
-        Self::from_text(path, &text, body_format, schema)
+        let mut session = Self::from_text(path, &text, body_format, schema)?;
+        session.on_disk = Some(text);
+        Ok(session)
     }
 
     /// Build a session from in-memory `text`. The `path` still drives prov's
     /// carrier/format detection (extension for a config doc, content sniffing for a
     /// fenced block). `schema` governs the metadata model when present.
+    ///
+    /// The text is not assumed to be what is on disk at `path`, so the first
+    /// [`save`](Self::save) writes without checking the file first.
     pub fn from_text(
         path: impl Into<PathBuf>,
         text: &str,
@@ -280,6 +292,7 @@ impl DocumentSession {
             body,
             has_body,
             saved_body,
+            on_disk: None,
             findings: Vec::new(),
             journal: Vec::new(),
             redo_journal: Vec::new(),
@@ -770,11 +783,64 @@ impl DocumentSession {
         Ok(self.metadata.source_snapshot())
     }
 
-    /// Write the reassembled document (metadata edits + body edits) to disk.
+    /// Write the reassembled document (metadata edits + body edits) to disk —
+    /// **refused** if the file is no longer what this session read.
+    ///
+    /// The write is `fs-transaction`'s: the new bytes go to a sibling temp file
+    /// and are renamed over the old, so a crash mid-save leaves the old
+    /// document or the new one and never half of each. The same set carries an
+    /// *expectation* of the bytes last read or written here, checked before
+    /// anything is touched, so a save cannot silently overwrite an edit made in
+    /// another window, by `prov`, or by a sync client since the document was
+    /// opened. Refused, nothing is written, the session keeps every edit, and
+    /// [`changed_on_disk`](Self::changed_on_disk) says why; a host that has
+    /// asked the person may then [`save_over`](Self::save_over).
     pub fn save(&mut self) -> Result<(), SessionError> {
+        let expect = self.on_disk.clone();
+        self.write(expect)
+    }
+
+    /// Write the reassembled document whatever is on disk now — the answer to
+    /// "the file changed; overwrite it anyway?". Still crash-atomic.
+    pub fn save_over(&mut self) -> Result<(), SessionError> {
+        self.write(None)
+    }
+
+    /// Whether the file on disk is no longer what this session last read or
+    /// wrote — edited, replaced or removed by something else. `false` for a
+    /// session built [from text](Self::from_text), which has no reading to
+    /// compare against.
+    pub fn changed_on_disk(&self) -> bool {
+        self.on_disk
+            .as_deref()
+            .is_some_and(|seen| std::fs::read_to_string(&self.path).ok().as_deref() != Some(seen))
+    }
+
+    fn write(&mut self, expect: Option<String>) -> Result<(), SessionError> {
         let full = self.reassemble()?;
-        std::fs::write(&self.path, full.as_bytes())
-            .map_err(|e| SessionError(format!("writing {}: {e}", self.path.display())))?;
+        // Resolve a symlink first: a rename over the link would replace it with
+        // a regular file, where the plain write this replaced went through it.
+        let target = std::fs::canonicalize(&self.path).unwrap_or_else(|_| self.path.clone());
+        let (root, name) = match (target.parent(), target.file_name()) {
+            (Some(dir), Some(name)) if !dir.as_os_str().is_empty() => (dir, Path::new(name)),
+            _ => (Path::new("."), target.as_path()),
+        };
+        // One op, so no journal: a lone replace is already indivisible.
+        let mut change = fs_transaction::ChangeSet::new();
+        if let Some(seen) = expect {
+            change.expect(name, seen);
+        }
+        change.write(name, full.as_bytes());
+        fs_transaction::exec::block_on(change.apply(&fs_transaction::StdFs, root)).map_err(
+            |e| match e {
+                fs_transaction::Error::Drifted(_) => SessionError(format!(
+                    "{} changed on disk since it was opened — not saved",
+                    self.path.display()
+                )),
+                e => SessionError(format!("writing {}: {e}", self.path.display())),
+            },
+        )?;
+        self.on_disk = Some(full);
         self.saved_body = self.body.source.clone();
         self.metadata.mark_saved();
         Ok(())
@@ -1079,5 +1145,68 @@ And what it costs.
         assert!(reopened.body().source.contains("Edited: "));
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// Something else wrote the file while it was open: the save refuses and
+    /// leaves that write alone, the session keeps its edits, and `save_over`
+    /// is the deliberate way past — after which the session holds the file to
+    /// its own bytes again, so the next save goes through unasked.
+    #[test]
+    fn a_save_refuses_to_overwrite_a_file_changed_underneath_it() {
+        let path = std::env::temp_dir().join("provui_core_document_session_drift.md");
+        std::fs::write(&path, DOC).unwrap();
+
+        let mut session = DocumentSession::open(&path).unwrap();
+        session.body_mut().insert("Mine: ");
+        assert!(!session.changed_on_disk());
+
+        let theirs = DOC.replace("Original body.", "Theirs.");
+        std::fs::write(&path, &theirs).unwrap();
+        assert!(session.changed_on_disk());
+
+        let err = session.save().unwrap_err();
+        assert!(err.0.contains("changed on disk"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            theirs,
+            "their write stands"
+        );
+        assert!(session.dirty(), "and ours is still here to save");
+
+        session.save_over().unwrap();
+        assert!(std::fs::read_to_string(&path).unwrap().contains("Mine: "));
+        assert!(!session.changed_on_disk());
+        session.body_mut().insert("again ");
+        session.save().unwrap();
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// A save through a symlink writes the file it points at and leaves the link
+    /// a link, as the plain write it replaced did.
+    #[cfg(unix)]
+    #[test]
+    fn a_save_through_a_symlink_keeps_the_link() {
+        let dir = std::env::temp_dir().join("provui_core_document_session_symlink");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let real = dir.join("real.md");
+        let link = dir.join("link.md");
+        std::fs::write(&real, DOC).unwrap();
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+
+        let mut session = DocumentSession::open(&link).unwrap();
+        session.body_mut().insert("Edited: ");
+        session.save().unwrap();
+
+        assert!(
+            std::fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert!(std::fs::read_to_string(&real).unwrap().contains("Edited: "));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

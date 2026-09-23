@@ -13,5 +13,6 @@ categories = ["text-editors", "config"]
 [dependencies]
 prov.workspace = true
 fig.workspace = true
+fs-transaction.workspace = true
 flower-core.workspace = true
 leaf-core.workspace = true

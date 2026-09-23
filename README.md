@@ -121,9 +121,12 @@ is a write: an unregistered target degrades to a path link, which is what prov's
 `format_reference` does when handed no id. What the caller does with the string
 is the caller's business.
 
-Saving writes bytes directly. A frontend that wants fixity and `updated`
-restamping maintained routes the write through prov's `Storage`/`mutate` layer
-instead; this is the floor it builds on, not a policy it inherits.
+Saving writes one document's bytes and applies none of prov's policy. The write
+is crash-atomic and refuses to overwrite a file that changed since it was read
+(see [Saving](#saving-and-what-is-not-here)), but a frontend that wants fixity
+and `updated` restamping maintained routes the write through prov's
+`Storage`/`mutate` layer instead; this is the floor it builds on, not a policy
+it inherits.
 
 ## Structure, values, and what this crate refuses to decide
 
@@ -268,7 +271,7 @@ strand a half-typed value in a pane no longer taking keys — and says so.
 | Key | |
 |---|---|
 | `^W` | switch panes |
-| `^S` | save the document — **both** regions, from either pane |
+| `^S` | save the document — **both** regions, from either pane; press again to overwrite a file that changed on disk |
 | `^G` | follow the link under the cursor — the metadata row, or the body link the caret is inside |
 | `^O` | back to the document you followed from |
 | `^R` | show the link text that points at the caret |
@@ -513,6 +516,17 @@ reassembled bytes, so the unit that gets saved is the file, not the pane you wer
 standing in. Dirtiness is likewise the session's answer, covering both regions.
 leaf's own `Doc::save` is deliberately unused — this body is a *region* of a
 file rather than a file, and the `Doc` has no path.
+
+The write goes through [`fs-transaction`](https://github.com/diaryx-org/fs-transaction),
+the crate prov's own writes use: the new bytes land in a sibling temp file and
+are renamed over the old, so a crash mid-save leaves one whole document or the
+other. The same change set **expects** the bytes the session last read or
+wrote, and is refused before anything is touched if the file has changed since —
+another window, `prov`, a sync client. The session keeps every edit, says so
+through `changed_on_disk`, and `save_over` is the deliberate way past. In the
+TUI that is a second `^S` in a row, the same two-press shape as quitting with
+unsaved changes; a key in between disarms it. A save through a symlink writes
+the file it points at and leaves the link alone.
 
 leaf's `Outcome` is a full editor's surface, and `leaf-tui` is where all of it is
 handled. This host implements the three outcomes that are about the document —

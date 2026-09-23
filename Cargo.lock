@@ -1228,6 +1228,7 @@ version = "0.5.5"
 dependencies = [
  "fig",
  "flower-core",
+ "fs-transaction",
  "leaf-core",
  "prov",
 ]

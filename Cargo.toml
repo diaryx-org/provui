@@ -34,6 +34,11 @@ prov = "0.15"
 # Named directly because `ProvBackend` reaches for `fig::Embed::replace_body` and
 # `fig::Value`, which are the tree and the splice both halves agree on.
 fig = "4"
+# Crash-atomic file writes, and the optimistic check that refuses one when the
+# file moved underneath. prov writes through it too; named directly because a
+# save is one document's bytes and none of prov's policy, so `DocumentSession`
+# stages it itself rather than borrowing a mutate op that would restamp.
+fs-transaction = "0.2"
 # The generic structural metadata editor. `ProvBackend` is an implementation of
 # its `Backend` trait; nothing here is upstreamed into it, because flower-core
 # does not know the word "prov" and should not learn it.
