@@ -602,11 +602,10 @@ impl DocumentSession {
     /// Whether there is a step to take back. See [`undo`](Self::undo) for why
     /// this is not `!journal().is_empty()`.
     ///
-    /// A hint, in the direction hints should err: it can say yes where the body
-    /// entries left are all coalesced away, because leaf's own `can_undo` is a
-    /// step counter rather than its history — see [`undo`](Self::undo). It
-    /// never says no while there is something to take back, which is the half a
-    /// greyed-out menu item needs to be right about.
+    /// Exact for the body, whose entries left over after a coalesced run are
+    /// passed over because leaf's `can_undo` says so. The one yes it can give
+    /// with nothing to show for it is a metadata step flower will refuse, and
+    /// that refusal is the answer the reader gets.
     pub fn can_undo(&self) -> bool {
         self.journal.iter().rev().any(|r| self.has_undo(*r))
     }
@@ -627,9 +626,9 @@ impl DocumentSession {
     ///
     /// **Entries leaf has nothing to answer for are dropped, not pressed.**
     /// Because leaf coalesces (see [`sync_history`](Self::sync_history)), eight
-    /// `Body` entries may face one leaf step: the first `undo` spends the step
-    /// and the next one walks past the remaining seven to the `Meta` entry
-    /// underneath. Without that, a reader would press the key seven times for
+    /// `Body` entries may face one leaf step: the first `undo` spends the step,
+    /// leaf's `can_undo` turns false, and the next one walks past the remaining
+    /// seven to the `Meta` entry underneath. Without that, a reader would press the key seven times for
     /// nothing before the metadata edit came back.
     ///
     /// `true` when something was undone.
@@ -639,10 +638,12 @@ impl DocumentSession {
                 continue;
             }
             let before = self.counters();
-            // flower's undo says whether the document moved; leaf's does not.
-            // The counters below answer that for both, so neither is asked.
+            // Both editors' undo says whether it moved; the counters below
+            // answer the same question the same way for both.
             match region {
-                Region::Body => self.body.undo(),
+                Region::Body => {
+                    self.body.undo();
+                }
                 Region::Meta => {
                     self.metadata.undo();
                 }
@@ -669,13 +670,12 @@ impl DocumentSession {
     /// older edit would undo something the reader did not ask about, in answer
     /// to a key press that was answered "no".
     ///
-    /// **leaf's `can_undo`/`can_redo` are step *counters*,** incremented once
-    /// per edit where twig coalesces several into one step — so they can say
-    /// yes when there is nothing left. A body move that changes nothing is
-    /// therefore an exhausted run rather than a refusal, and the walk carries on
-    /// to the next entry, which is what keeps a metadata edit from being
-    /// stranded behind a word someone typed. (A genuinely read-only body would
-    /// read the same way, and correctly: there is nothing there to take back.)
+    /// **leaf's `can_undo`/`can_redo` mirror twig's stacks exactly,** and say
+    /// no for a read-only body, so an exhausted run is passed over before it is
+    /// pressed. A body move that changes nothing anyway is twig failing, which
+    /// leaf reports in its status; there is no key declining anything, so the
+    /// walk carries on to the next entry rather than strand a metadata edit
+    /// behind it.
     fn nothing_happened(&mut self, region: Region) -> bool {
         match region {
             Region::Body => {
@@ -701,7 +701,9 @@ impl DocumentSession {
             }
             let before = self.counters();
             match region {
-                Region::Body => self.body.redo(),
+                Region::Body => {
+                    self.body.redo();
+                }
                 Region::Meta => {
                     self.metadata.redo();
                 }
