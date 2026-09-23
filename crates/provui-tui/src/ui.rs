@@ -252,8 +252,8 @@ pub enum MetadataHit {
 /// as far as it must to keep its selection on screen. Those are the widget's
 /// constants (one row of chrome at each end, two even panes from 64 columns,
 /// a list that starts at the top every frame), restated here. A widget that
-/// moves them moves this too; the draw tests in `main.rs` are where that
-/// would show.
+/// moves them moves this too; the click tests in `mouse.rs` are where
+/// that would show.
 pub fn metadata_hit<B: Backend>(
     metadata: Rect,
     model: &Model<B>,
@@ -434,6 +434,11 @@ fn status_line(f: &mut Frame, area: Rect, app: &App, session: &DocumentSession) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::fit_metadata;
+    use crate::testing::open;
+    use crate::{FOLLOW_CHORD, ui};
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
 
     fn area(width: u16, height: u16) -> Rect {
         Rect::new(0, 0, width, height)
@@ -555,5 +560,66 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// The two widgets and the status line, drawn together, at the sizes a
+    /// terminal actually comes in — including the ones where the split is
+    /// abandoned.
+    #[test]
+    fn draws_both_panes_at_every_size_without_panicking() {
+        let (path, mut session, mut app) = open("provui_tui_draw.md");
+
+        for (w, h) in [(80, 24), (120, 40), (64, 12), (40, 8), (20, 3), (10, 1)] {
+            for focus in [Focus::Body, Focus::Metadata] {
+                app.focus = focus;
+                let mut terminal = Terminal::new(TestBackend::new(w, h)).unwrap();
+                fit_metadata(Rect::new(0, 0, w, h), &mut session, &app);
+                terminal
+                    .draw(|f| ui::draw(f, &mut app, &mut session))
+                    .unwrap();
+            }
+        }
+
+        // The status line owes the reader four things — the file, the state, the
+        // focus, and the way out of it — and owes them at **80 columns**, which
+        // is the width that decides whether they fit. A `Line` clips silently on
+        // the right, so the only way this stays true is by asserting the last of
+        // them is still on the screen.
+        app.focus = Focus::Body;
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|f| ui::draw(f, &mut app, &mut session))
+            .unwrap();
+        let rendered = format!("{}", terminal.backend());
+        assert!(rendered.contains("provui_tui_draw.md"), "the file");
+        assert!(rendered.contains("○ saved"), "the state");
+        assert!(rendered.contains("focus: body"), "the focus");
+        assert!(rendered.contains(FOCUS_CHORD), "the chord");
+        assert!(
+            rendered.contains("^Q quit"),
+            "the way out survives the trim"
+        );
+
+        // And both pane labels are there, each carrying the focus marker that is
+        // the only cue flower's own header bar leaves room for.
+        assert!(rendered.contains("▶ leaf — body"), "focused body label");
+        assert!(rendered.contains("flower —"), "flower's own header");
+
+        // The metadata pane's hint set is the longer of the two — it carries the
+        // follow chord as well — so it is the one that decides what the trim
+        // gives up at 80 columns. What it must never give up is the way out.
+        app.focus = Focus::Metadata;
+        terminal
+            .draw(|f| ui::draw(f, &mut app, &mut session))
+            .unwrap();
+        let rendered = format!("{}", terminal.backend());
+        assert!(rendered.contains("focus: metadata"), "the focus");
+        assert!(rendered.contains(FOLLOW_CHORD), "the follow chord");
+        assert!(
+            rendered.contains("^Q quit"),
+            "the way out survives the trim"
+        );
+
+        let _ = std::fs::remove_file(&path);
     }
 }
