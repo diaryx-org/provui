@@ -32,6 +32,17 @@ _No commits since the last tag._
 
 <!-- git-cliff:end -->
 
+## v0.5.5 — 2026-09-22
+
+### Fixed
+
+- **core** — build against leaf 0.4.4, whose undo and redo return bool ([`03dda9a`](https://github.com/diaryx-org/provui/commit/03dda9afdae8cae328382eb9215f3ebbed46c0e1))
+
+### Behavioural changes
+
+- Session::can_undo and can_redo turn false once leaf's history is exhausted, instead of staying true through the Body entries a coalesced run of typing left behind.
+
+
 ## v0.5.4 — 2026-09-21
 
 _No commits since the last tag._
