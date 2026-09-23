@@ -510,9 +510,9 @@ checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 
 [[package]]
 name = "flower-core"
-version = "0.6.0"
+version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a341d681d654239a1fe0e9a69c2b98ea7fc25c592b4636792259e8e4b2d9e633"
+checksum = "3a7b316c063b2d9fb0ca549ca72890d6cc6e8156dbf1d6276df2e0b97a080de6"
 dependencies = [
  "anyhow",
  "fig",
@@ -798,9 +798,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-core"
-version = "0.4.0"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "68db5cb81c1237eed5237258f889b625a9af76b9573a5da329d68f9baa17e7af"
+checksum = "ad233e0aab1226529d9db5e48b137f9886326b4145b7e48b624a1be1792e761f"
 dependencies = [
  "anyhow",
  "syntect",
@@ -812,9 +812,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-math"
-version = "0.4.0"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d6e80d4a10cf625bd861caca7317f05e46caa7eaf14dffba4aa61006d897603"
+checksum = "f127da4486d2ed74744b169a204120477a43b2657b6450f84359784a2b8530f3"
 dependencies = [
  "ratex-layout",
  "ratex-parser",
@@ -824,9 +824,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-raster"
-version = "0.4.0"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fba687ecdd993625174b7a04dbf8ea6efea3b6f20ab4050c2ac6ac455cca4e91"
+checksum = "ceb9f7004fe30b8750ac6f453ffe48cedeccd9cc66c3d784661e7b4be4900cf2"
 dependencies = [
  "cosmic-text",
  "image",
@@ -835,9 +835,9 @@ dependencies = [
 
 [[package]]
 name = "leaf-ratatui"
-version = "0.4.0"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbb968c2bf04e458e79feaa4b1164c1f42f14aa05b56ab73ad2d0226553f6cde"
+checksum = "9347695d6b163c0e0f969663faa3951dc6ec60c54d52f381203bceeddb5f1425"
 dependencies = [
  "leaf-core",
  "leaf-math",
@@ -1142,9 +1142,9 @@ dependencies = [
 
 [[package]]
 name = "prov"
-version = "0.15.0"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f775356510df88d97329e527375bdc18a213f4dffd38d86cd5b1fd2265b7e29"
+checksum = "1c6e5ee3dae65cb44003d63ea71742d0b7e131edd6faf9035442d3722d7f3bff"
 dependencies = [
  "edtf-normalize",
  "fig",
@@ -1162,9 +1162,9 @@ dependencies = [
 
 [[package]]
 name = "prov-config"
-version = "0.15.0"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d760c99ee6b966966ff73a8fcdea1abb16ae480827679d061d544609bf5d21e9"
+checksum = "1327dc91338f3ca7dce84bec9b1ab15ff7c0e3ad54e97b490c600853eb12af86"
 dependencies = [
  "fig",
  "fig-schema",
@@ -1177,9 +1177,9 @@ dependencies = [
 
 [[package]]
 name = "prov-exports"
-version = "0.15.0"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "af53afb6d2c5a9e3657e1ba9ad5e2ac607f7bfab773e2546f323d16eb992e1e5"
+checksum = "d18cff90a9252380ed792b1c514b00b491b846d2fff57777a6dd476ce35779b0"
 dependencies = [
  "prov-graph",
  "prov-views",
@@ -1187,9 +1187,9 @@ dependencies = [
 
 [[package]]
 name = "prov-graph"
-version = "0.15.0"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3446beb2ba02f177da9206c4019362659a7f48000f271f067e197936e0fccb9e"
+checksum = "e03238dcf5588f58d01f09d7ed5f16dee5db282c6dabcf193658f56c69b76a32"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -1202,9 +1202,9 @@ dependencies = [
 
 [[package]]
 name = "prov-store"
-version = "0.15.0"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b128604aa7adeb24576322c6938ee0a077c5be213fa5a20ca714fe377ab7f268"
+checksum = "34bd42d2b54c6d35cb91390d37fb58161815472ca7b1017ed13dbded1feca990"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -1213,9 +1213,9 @@ dependencies = [
 
 [[package]]
 name = "prov-views"
-version = "0.15.0"
+version = "0.15.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c89c246b8f85e27242935d42be7262e727a5fa669646abf39759bd5dffda2bea"
+checksum = "116949fd524eff1b95201b17c895bacc0cb8311f0dfc5f628f7c1294f4a9f9c6"
 dependencies = [
  "edtf-core",
  "prov-graph",
@@ -2053,18 +2053,18 @@ dependencies = [
 
 [[package]]
 name = "twig-doc"
-version = "3.7.0"
+version = "3.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "019252b19c5f7b86e0ffe712fe0cc9f0a85a08c7fe28d759c98c8a3d362e4b18"
+checksum = "647ced10a2ae493d48450470363e43ff01e46ccd34dbcdf0126061a228465c94"
 dependencies = [
  "twig-sys",
 ]
 
 [[package]]
 name = "twig-sys"
-version = "3.7.0"
+version = "3.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff6b1e0abd7283696d63cf985f6e52334d73fe963aff5f0392f35ac3d635ae39"
+checksum = "9cb5b95bb1dc82a4d863c3e41639546fa9c36e068a7a9d64ae60837630e32564"
 dependencies = [
  "twig-sys-linux-arm64-gnu",
  "twig-sys-linux-x64-gnu",
@@ -2075,33 +2075,33 @@ dependencies = [
 
 [[package]]
 name = "twig-sys-linux-arm64-gnu"
-version = "3.7.0"
+version = "3.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a4f12d1ccfa938226a18872b7b84002be71b2b7f42ff1cb7fb196e358cc1857"
+checksum = "bc07a7eb1341ace3e98242d0e12e62dd951763a5ce73b9513457c2cd228bb7e1"
 
 [[package]]
 name = "twig-sys-linux-x64-gnu"
-version = "3.7.0"
+version = "3.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ea1ff70a48d7b9eaaaeb7fdda6a54e8fe050205ff5a797d6239442455ce34dd4"
+checksum = "8cf7a3c175d1619d5907fae6d31cc62b2d437c88ca33d015a955772744f45bfc"
 
 [[package]]
 name = "twig-sys-macos-arm64"
-version = "3.7.0"
+version = "3.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0bb165928a00b54377f7350ca0f1c64ad2cf8bced474426458148b3c8fbf49f"
+checksum = "37e770fa7153c7bd1f01d57ef1e06f2d20825fb65053a06724b2394244de3cf4"
 
 [[package]]
 name = "twig-sys-wasm32"
-version = "3.7.0"
+version = "3.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "303bb750565ba66defadb95e7ac0721203cd4ea543d7f9e076531eff80306f79"
+checksum = "3987e9918beaf72dce1fdc8dc18f038a9d7847bed04734b3f327a428ddec48b7"
 
 [[package]]
 name = "twig-sys-windows-x64-msvc"
-version = "3.7.0"
+version = "3.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44f9a5b30d3651383e84df7fad4c11f6428a3664a6690a73dd5d56779e3e74a1"
+checksum = "3d7eec8f8c55bc3f4de2ff9fbe88fdade4b9877e792747714125c5689b72b278"
 
 [[package]]
 name = "two-face"
