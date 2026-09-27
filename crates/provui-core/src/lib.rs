@@ -355,7 +355,7 @@ impl Backend for ProvBackend {
             EditOp::SetLeadingComment { path, text } => {
                 let path = to_fig(&path);
                 with_fig!(&mut editor, |e| {
-                    e.delete_leading_comments(&path).map_err(be)?;
+                    e.delete_leading_comment(&path).map_err(be)?;
                     if let Some(text) = &text {
                         e.add_leading_comment(&path, text).map_err(be)?;
                     }
