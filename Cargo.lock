@@ -418,9 +418,9 @@ dependencies = [
 
 [[package]]
 name = "fig"
-version = "4.1.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdab6431d21f8399db41f3da6a38630f1c9cee2053a3fa2ce12fa8f2918e95f8"
+checksum = "ef4a4bcf8186e7cc52ec1ed4e472cb77878692527ad91454b8457e51c7a19adf"
 dependencies = [
  "fig-macros",
  "fig-sys",
@@ -430,9 +430,9 @@ dependencies = [
 
 [[package]]
 name = "fig-macros"
-version = "4.1.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97112fd10960528302531017038d2d3e37b7ce110388e06017314381e4d2c573"
+checksum = "cdcdd51d1c3f5ff641454e7c75b3d8eb7f55ce7886a70855321e073d8d266004"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -441,18 +441,18 @@ dependencies = [
 
 [[package]]
 name = "fig-schema"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a35f21dad45b4318ee9850ddc6d89ff9043971c8e4ec934e11988885a02b3a6"
+checksum = "2fbbb9f9c0c455439ad47f6ea858e6302da0aca21ef88a6977edd25715cb9331"
 dependencies = [
  "fig",
 ]
 
 [[package]]
 name = "fig-sys"
-version = "4.1.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "745f13f87d40b394d1f5ce4a15ab58b94b19b51a11b97d27f720ca8d05640442"
+checksum = "7fdc9aa1c7bebfd173577c331e8c53d4e2a5a01622d6b307b0f5464087f4ff3e"
 dependencies = [
  "fig-sys-linux-arm64-gnu",
  "fig-sys-linux-x64-gnu",
@@ -463,33 +463,33 @@ dependencies = [
 
 [[package]]
 name = "fig-sys-linux-arm64-gnu"
-version = "4.1.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2dc81d1a3d5214e2609791bfe8de2982ff73d813b8843714df2b587778ba8a7"
+checksum = "2662f139818979bc4e2d67fd44e309b481fc80d74ab325da028eff3e4f6b4759"
 
 [[package]]
 name = "fig-sys-linux-x64-gnu"
-version = "4.1.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7a8000c6f79748432976fcc4491e61616d7ac0901b5630c5ab2302098d10eac"
+checksum = "1f19c8849e66e88610b1c5fef33531dbefca7869f29328eeb6c3952de6642828"
 
 [[package]]
 name = "fig-sys-macos-arm64"
-version = "4.1.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f662347684a27c55d992ba1beefbe732386cbcaf2774dc1346ce759497906ea"
+checksum = "bd566c2d89a42634ab1a9fa14da2aef648f64984532763b99b20a6d67b8ef087"
 
 [[package]]
 name = "fig-sys-wasm32"
-version = "4.1.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cc19a0cedd8e1da5782af6ad993a7b7786b72687f13991489441e7723c4672f"
+checksum = "3494d0a476225d8b5c37190051e24a4556121376a3f91c4edcd8b95e89ce9cee"
 
 [[package]]
 name = "fig-sys-windows-x64-msvc"
-version = "4.1.0"
+version = "5.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b084a2d16ad957ae7db7ec3a8f6cb3134fff8aac166ec8d1d593e5316243c7d"
+checksum = "23c5ed649e0c9f18715893960ba6cc8f252615d40df349d28a3a817e50e29743"
 
 [[package]]
 name = "flate2"
@@ -510,9 +510,9 @@ checksum = "98de4bbd547a563b716d8dfa9aad1cb19bfab00f4fa09a6a4ed21dbcf44ce9c4"
 
 [[package]]
 name = "flower-core"
-version = "0.6.1"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3a7b316c063b2d9fb0ca549ca72890d6cc6e8156dbf1d6276df2e0b97a080de6"
+checksum = "ccbc4a04d873394730a98320e199847b2297d1ce290ed6f62c0eab865a1f1155"
 dependencies = [
  "anyhow",
  "fig",
@@ -521,9 +521,9 @@ dependencies = [
 
 [[package]]
 name = "flower-ratatui"
-version = "0.6.1"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4b366a3a0f2c62eb2c46156412649f00d5a20e9160eaad8148700fec0f85b24c"
+checksum = "f1541710b4f3f4f1fb131f110fdb9ba1325616e2c4417d7d042607570fc0e7b9"
 dependencies = [
  "flower-core",
  "ratatui",
@@ -1142,9 +1142,9 @@ dependencies = [
 
 [[package]]
 name = "prov"
-version = "0.15.3"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c6e5ee3dae65cb44003d63ea71742d0b7e131edd6faf9035442d3722d7f3bff"
+checksum = "7a0476daf8a07fd295fe03be183d907968f0b8eb850623b89e24f624f8d8325b"
 dependencies = [
  "edtf-normalize",
  "fig",
@@ -1162,9 +1162,9 @@ dependencies = [
 
 [[package]]
 name = "prov-config"
-version = "0.15.3"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1327dc91338f3ca7dce84bec9b1ab15ff7c0e3ad54e97b490c600853eb12af86"
+checksum = "2173f0a0cc285270d39d64faa1e50eef0cb03d82e25aa1e38d456f7df651e235"
 dependencies = [
  "fig",
  "fig-schema",
@@ -1177,9 +1177,9 @@ dependencies = [
 
 [[package]]
 name = "prov-exports"
-version = "0.15.3"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d18cff90a9252380ed792b1c514b00b491b846d2fff57777a6dd476ce35779b0"
+checksum = "170bbff65bace27df9f2358349b267e5f5db17067c17a7cedbc5c5231a9aaffc"
 dependencies = [
  "prov-graph",
  "prov-views",
@@ -1187,9 +1187,9 @@ dependencies = [
 
 [[package]]
 name = "prov-graph"
-version = "0.15.3"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e03238dcf5588f58d01f09d7ed5f16dee5db282c6dabcf193658f56c69b76a32"
+checksum = "48b22d447f8c7425f471c0f4a9b094641829dbe2bd746063c2db5c91eb980e7d"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -1202,9 +1202,9 @@ dependencies = [
 
 [[package]]
 name = "prov-store"
-version = "0.15.3"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "34bd42d2b54c6d35cb91390d37fb58161815472ca7b1017ed13dbded1feca990"
+checksum = "eb052024d3346f7678595c1c98a8d6772a84ead687f4375b40df7997a36fc17f"
 dependencies = [
  "fig",
  "fs-transaction",
@@ -1213,9 +1213,9 @@ dependencies = [
 
 [[package]]
 name = "prov-views"
-version = "0.15.3"
+version = "0.15.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "116949fd524eff1b95201b17c895bacc0cb8311f0dfc5f628f7c1294f4a9f9c6"
+checksum = "9045927b3ca12affd46b78c5b7f4fb980c8885e4ad2d7976f3102cc2b7845e8a"
 dependencies = [
  "edtf-core",
  "prov-graph",
