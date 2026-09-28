@@ -32,6 +32,28 @@ _No commits since the last tag._
 
 <!-- git-cliff:end -->
 
+## v0.5.6 — 2026-09-28
+
+### Breaking
+
+- **deps** — move to fig 5 ([`28fe416`](https://github.com/diaryx-org/provui/commit/28fe416e4c0c629041c9f3fe9797dfa0d19e76b8))
+
+### Added
+
+- **core** — save through fs-transaction, and refuse to overwrite a file that changed underneath ([`f415a5f`](https://github.com/diaryx-org/provui/commit/f415a5f15ecd6db4be1650dded175884c6309758))
+
+### Changed
+
+- **tui** — split main.rs into app, input, follow and mouse modules ([`53410ce`](https://github.com/diaryx-org/provui/commit/53410ce40bb12197539e6a38232a8963b5313609))
+
+### Behavioural changes
+
+- DocumentSession::save now returns an error, and writes nothing, when the file on disk differs from what the session opened or last saved; call save_over to overwrite. Sessions built with from_text are not checked.
+
+- provui-core now requires `fig = "5"`, and a prov and
+flower built on it; move a consumer's own fig pin to 5 alongside.
+
+
 ## v0.5.5 — 2026-09-22
 
 ### Fixed
