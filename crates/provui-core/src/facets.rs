@@ -9,8 +9,8 @@
 //! offers to let you type into both.
 //!
 //! [`Facets`] answers which is which. It is built from the resolved workspace
-//! config — the relation vocabulary, the `fields` declarations, the name of the
-//! stamped `updated` field — so the answer is *this workspace's*, not a list
+//! config — the relation vocabulary, the `fields` declarations, the field it
+//! declares `stamp: edit` — so the answer is *this workspace's*, not a list
 //! this crate invented, and a workspace that retracts `link_of` gets `link_of:
 //! Carried` without anything here knowing it happened.
 //!
@@ -111,10 +111,6 @@ pub struct FieldFacet {
     pub vocabulary: Option<String>,
     /// Whether an unknown term is rejected (`closed`) or merely unlisted.
     pub values: OpenClosed,
-    /// Whether each term is a document in its own right rather than a row in a
-    /// flat store — in which case its terms are ordinary content, reachable
-    /// down the spanning tree as well as through this pointer.
-    pub reify: bool,
     /// The index this declaration is scoped under, as written in the config —
     /// `None` for the declaration that governs the whole workspace. `Some`
     /// says the facet describes one region's declaration and the field may
@@ -142,7 +138,7 @@ pub enum Facet {
     Title,
     /// One of the four keys on the opaque-payload axis.
     Payload(Payload),
-    /// The field the workspace's `updated:` config names — machine-stamped in
+    /// The field the workspace declares `stamp: edit` — machine-stamped in
     /// RFC 3339 UTC because prov reads it back to know when to rewrite it. The
     /// *name* is the workspace's; a human-friendly date is a different,
     /// user-owned field prov never touches.
@@ -231,7 +227,8 @@ pub struct Facets {
     /// so `of_key` is a lookup rather than a scan of `relations()`.
     by_relation: BTreeMap<String, RelationFacet>,
     fields: BTreeMap<String, FieldFacet>,
-    /// The workspace's stamped-`updated` field name; empty means the axis is off.
+    /// The field the workspace declares `stamp: edit`; `None` means the axis is
+    /// off.
     stamp: Option<String>,
 }
 
@@ -269,7 +266,7 @@ impl Facets {
             relations,
             by_relation,
             fields,
-            stamp: (!config.updated.is_empty()).then(|| config.updated.clone()),
+            stamp: config.updated_field().map(str::to_string),
         }
     }
 
@@ -430,7 +427,6 @@ fn field_facet(name: &str, spec: &FieldSpec) -> FieldFacet {
         name: name.to_string(),
         vocabulary: spec.vocabulary.clone(),
         values: spec.values,
-        reify: spec.reify,
         under: spec.under.clone(),
     }
 }
@@ -451,7 +447,7 @@ fn top_level_keys(meta: &Value) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use prov::{Document, FieldType, RelationDef};
+    use prov::{Document, FieldType, RelationDef, Stamp};
 
     const DOC: &str = "\
 ---
@@ -480,12 +476,22 @@ content_hash: sha256-abc
                 ty: None,
                 values: OpenClosed::Closed,
                 vocabulary: Some("audiences.yaml".to_string()),
-                reify: false,
                 default: None,
                 under: None,
+                stamp: None,
             }],
         );
-        config.updated = "updated".to_string();
+        config.fields.insert(
+            "updated".to_string(),
+            vec![FieldSpec {
+                ty: None,
+                values: OpenClosed::default(),
+                vocabulary: None,
+                default: None,
+                under: None,
+                stamp: Some(Stamp::Edit),
+            }],
+        );
         config
     }
 
@@ -615,9 +621,9 @@ content_hash: sha256-abc
                 ty: Some(FieldType::Str),
                 values: OpenClosed::default(),
                 vocabulary: None,
-                reify: false,
                 default: None,
                 under: None,
+                stamp: None,
             }],
         );
         let facets = Facets::from_config(&config);
@@ -645,9 +651,9 @@ content_hash: sha256-abc
                 ty: None,
                 values: OpenClosed::Closed,
                 vocabulary: Some("task-statuses.yaml".to_string()),
-                reify: false,
                 default: None,
                 under: Some("[[Tasks]]".to_string()),
+                stamp: None,
             }],
         );
         let facets = Facets::from_config(&config);

@@ -14,7 +14,7 @@
 //!
 //! Prepending is what makes an *overlay* possible rather than only an addition:
 //! an app that wants a narrower vocabulary for a key this crate governs openly
-//! (`views.*.group`, say) puts its own rule first and shadows the generic one.
+//! (`filing.*.field`, say) puts its own rule first and shadows the generic one.
 //! Appending would leave the generic rule winning and the app's rule dead.
 //!
 //! These builders exist so an overlay's rows come out looking like the ones
@@ -94,7 +94,7 @@ pub fn choice_terms(at: PathPat, title: &str, icon: Icon, values: Vec<Term>) -> 
 
 /// An offered-but-not-enforced pick-list — for a vocabulary this crate cannot
 /// see the whole of (see `metadata.format`), or one where a value it does not
-/// know is still legitimate (see `views.*.group`).
+/// know is still legitimate (see `filing.*.field`).
 pub fn open_choice(at: PathPat, title: &str, icon: Icon, values: &[(&str, &str)]) -> FieldRule {
     open_choice_terms(
         at,
@@ -134,8 +134,8 @@ pub fn costly(mut rule: FieldRule, tint: Tint, why: &str) -> FieldRule {
 /// Mark one *answer* as the costly one.
 ///
 /// The shape most of a workspace config actually has: `recycle_bin` is not
-/// dangerous, `recycle_bin: false` is; `fields.*.reify` is not expensive,
-/// turning it *on* is. Marking the field would warn on the harmless answer too,
+/// dangerous, `recycle_bin: false` is; `identity` is not expensive, turning
+/// it to `none` is. Marking the field would warn on the harmless answer too,
 /// and a warning that fires either way is how a reader learns to click through
 /// warnings.
 ///

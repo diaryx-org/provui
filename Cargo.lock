@@ -40,6 +40,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
+name = "android_system_properties"
+version = "0.1.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae221649c9976a6f6c56ae1facf410f3ddb33cc661c4b7b61020a912d4237fbc"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "antlr4rust"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "093d520274bfff7278d776f7ea12981a0a0a6f96db90964658e0f38fc6e9a6a6"
+dependencies = [
+ "better_any",
+ "bit-set",
+ "byteorder",
+ "lazy_static",
+ "murmur3",
+ "once_cell",
+ "parking_lot",
+ "typed-arena",
+ "uuid",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.104"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -78,6 +104,12 @@ dependencies = [
  "outref",
  "vsimd",
 ]
+
+[[package]]
+name = "better_any"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4372b9543397a4b86050cc5e7ee36953edf4bac9518e8a774c2da694977fb6e4"
 
 [[package]]
 name = "bincode"
@@ -151,6 +183,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "byteorder"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1fd0f2584146f6f2ef48085050886acf353beff7305ebd1ae69500e27c67f64b"
+
+[[package]]
 name = "byteorder-lite"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -172,10 +210,48 @@ dependencies = [
 ]
 
 [[package]]
+name = "cc"
+version = "1.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f360145194ee8e21db5ee7f3fcd4fe52210864c75c985dae33218202c8bbe040"
+dependencies = [
+ "find-msvc-tools",
+ "shlex",
+]
+
+[[package]]
+name = "cel"
+version = "0.14.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ae7daebcd4d032c9a5288790c2facde6fab3f9a9ff8d5028765e8b48a36eeb2"
+dependencies = [
+ "antlr4rust",
+ "chrono",
+ "lazy_static",
+ "nom",
+ "pastey",
+ "regex",
+ "serde",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "cfg-if"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
+
+[[package]]
+name = "chrono"
+version = "0.4.45"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1aa79e62e7697b8e29b513a68abacf485adcd1fe8284a4316c5ae868e6633327"
+dependencies = [
+ "iana-time-zone",
+ "num-traits",
+ "serde",
+ "windows-link",
+]
 
 [[package]]
 name = "color_quant"
@@ -202,6 +278,12 @@ name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
+
+[[package]]
+name = "core-foundation-sys"
+version = "0.8.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "773648b94d0e5d620f64f280777445740e61fe701025087ec8b57f45c791888b"
 
 [[package]]
 name = "core_maths"
@@ -492,6 +574,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "23c5ed649e0c9f18715893960ba6cc8f252615d40df349d28a3a817e50e29743"
 
 [[package]]
+name = "find-msvc-tools"
+version = "0.1.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aedcfb3409746eddb02b9e19ebda1c3394f759a152e48ee875a0844d1b955484"
+
+[[package]]
 name = "flate2"
 version = "1.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -589,6 +677,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c5f24beb16fadfb4a4f47a9b1938bed0ddaed9ecfb4b834b8eeaf39fec85916"
 
 [[package]]
+name = "fs-transaction"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3397fa5de2228e9108c3d125562a07a68dedfc588169168f6badb37dca848c2a"
+
+[[package]]
 name = "futures-core"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -676,6 +770,30 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17"
 dependencies = [
  "typenum",
+]
+
+[[package]]
+name = "iana-time-zone"
+version = "0.1.65"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e31bc9ad994ba00e440a8aa5c9ef0ec67d5cb5e5cb0cc7f8b744a35b389cc470"
+dependencies = [
+ "android_system_properties",
+ "core-foundation-sys",
+ "iana-time-zone-haiku",
+ "js-sys",
+ "log",
+ "wasm-bindgen",
+ "windows-core",
+]
+
+[[package]]
+name = "iana-time-zone-haiku"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
+dependencies = [
+ "cc",
 ]
 
 [[package]]
@@ -795,6 +913,12 @@ dependencies = [
  "polycool",
  "smallvec",
 ]
+
+[[package]]
+name = "lazy_static"
+version = "1.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "leaf-core"
@@ -927,6 +1051,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "minimal-lexical"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68354c5c6bd36d73ff3feceb05efa59b6acb7626617f4962be322a825e61f79a"
+
+[[package]]
 name = "miniz_oxide"
 version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -972,6 +1102,25 @@ checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
 dependencies = [
  "num-traits",
  "pxfm",
+]
+
+[[package]]
+name = "murmur3"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a198f9589efc03f544388dfc4a19fe8af4323662b62f598b8dcfdac62c14771c"
+dependencies = [
+ "byteorder",
+]
+
+[[package]]
+name = "nom"
+version = "7.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d273983c5a657a70a3e8f2a01329822f3b8c8172b73826411a55751e404a0a4a"
+dependencies = [
+ "memchr",
+ "minimal-lexical",
 ]
 
 [[package]]
@@ -1032,6 +1181,12 @@ name = "paste"
 version = "1.0.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
+
+[[package]]
+name = "pastey"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4"
 
 [[package]]
 name = "phf"
@@ -1142,17 +1297,19 @@ dependencies = [
 
 [[package]]
 name = "prov"
-version = "0.15.5"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a0476daf8a07fd295fe03be183d907968f0b8eb850623b89e24f624f8d8325b"
+checksum = "93cd5511f3efe36e8df84f4bed99b1fc6f98c143770dd572797e8822dc6d8b10"
 dependencies = [
  "edtf-normalize",
  "fig",
  "fig-schema",
- "fs-transaction",
+ "fs-transaction 0.4.0",
  "indexmap",
  "prov-config",
  "prov-exports",
+ "prov-filing",
+ "prov-grain",
  "prov-graph",
  "prov-store",
  "prov-views",
@@ -1162,14 +1319,15 @@ dependencies = [
 
 [[package]]
 name = "prov-config"
-version = "0.15.5"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2173f0a0cc285270d39d64faa1e50eef0cb03d82e25aa1e38d456f7df651e235"
+checksum = "9163967fe1b5ea0dc4d2541abbc56c6c432e4ba290c609f6e12adeb8cb3cf219"
 dependencies = [
  "fig",
  "fig-schema",
  "indexmap",
  "prov-exports",
+ "prov-filing",
  "prov-graph",
  "prov-views",
  "thiserror 2.0.20",
@@ -1177,22 +1335,42 @@ dependencies = [
 
 [[package]]
 name = "prov-exports"
-version = "0.15.5"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "170bbff65bace27df9f2358349b267e5f5db17067c17a7cedbc5c5231a9aaffc"
+checksum = "b00322a6a655d34db2923d7de000f0f9632982b0d3173de3817ec393c0a2dac4"
 dependencies = [
  "prov-graph",
  "prov-views",
 ]
 
 [[package]]
-name = "prov-graph"
-version = "0.15.5"
+name = "prov-filing"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "48b22d447f8c7425f471c0f4a9b094641829dbe2bd746063c2db5c91eb980e7d"
+checksum = "25fa64f516efe25acd44e87ba913508dab45599e89e9b7d3e51ab646637bb0c4"
+dependencies = [
+ "prov-grain",
+ "prov-graph",
+]
+
+[[package]]
+name = "prov-grain"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3c3859ef03d4d4fe7b4d25ee93cfc6c2fac5f384313814f73fbfdc4375a35443"
+dependencies = [
+ "edtf-core",
+ "prov-graph",
+]
+
+[[package]]
+name = "prov-graph"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1c9ed7a470877a4ea367a85371ae1679e60fc9509d0eafd62897cb0296b956ad"
 dependencies = [
  "fig",
- "fs-transaction",
+ "fs-transaction 0.4.0",
  "indexmap",
  "moid",
  "sha2",
@@ -1202,22 +1380,23 @@ dependencies = [
 
 [[package]]
 name = "prov-store"
-version = "0.15.5"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb052024d3346f7678595c1c98a8d6772a84ead687f4375b40df7997a36fc17f"
+checksum = "4a50090c4c78b3ef59f3de043e204beb01d1d76a75ddd09721a3b4278ffbb467"
 dependencies = [
  "fig",
- "fs-transaction",
+ "fs-transaction 0.4.0",
  "prov-graph",
 ]
 
 [[package]]
 name = "prov-views"
-version = "0.15.5"
+version = "0.16.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9045927b3ca12affd46b78c5b7f4fb980c8885e4ad2d7976f3102cc2b7845e8a"
+checksum = "ac6d59f9379e9266da9943082375147e1afaac59691d5ae5d856cd19a2abdb03"
 dependencies = [
- "edtf-core",
+ "cel",
+ "prov-grain",
  "prov-graph",
  "unicode-normalization",
 ]
@@ -1228,7 +1407,7 @@ version = "0.5.6"
 dependencies = [
  "fig",
  "flower-core",
- "fs-transaction",
+ "fs-transaction 0.2.1",
  "leaf-core",
  "prov",
 ]
@@ -1714,6 +1893,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "shlex"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
+
+[[package]]
 name = "signal-hook"
 version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2107,6 +2292,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "typed-arena"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6af6ae20167a9ece4bcb41af5b80f8a1f1df981f6391189ce00fd257af04126a"
+
+[[package]]
 name = "typenum"
 version = "1.20.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2229,6 +2420,16 @@ dependencies = [
  "unicode-script",
  "unicode-vo",
  "xmlwriter",
+]
+
+[[package]]
+name = "uuid"
+version = "1.26.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
+dependencies = [
+ "js-sys",
+ "wasm-bindgen",
 ]
 
 [[package]]

@@ -47,31 +47,37 @@ use crate::rules::{
 /// hand-editing it claims conformance to a format the file may not have.
 pub const CONFIG_READONLY_KEYS: &[&str] = &["spec"];
 
-/// The grains a view may group (or nest) by — the config spellings of
-/// [`prov::views::Grain`].
+/// The ways a filing entry may nest new records — the config spellings of
+/// [`prov::filing::Nest`], one per entry in [`prov::filing::NESTS`].
 ///
-/// Written out rather than read off the enum because prov exports the type but
-/// not its spelling table, and a picker needs a gloss per entry regardless. The
+/// Written out rather than taken from `NESTS` alone because a picker needs a
+/// gloss per entry, which prov does not carry. The
 /// [`every_offered_term_is_one_prov_accepts`] test holds this list to prov's own
-/// parser, so a grain prov renames fails the build here.
+/// parser, and [`the_nests_are_provs`] to its list, so a spelling prov renames
+/// or adds fails the build here.
 ///
 /// The bare words only. prov also takes `{ initial: n }` for a wider
 /// alphabetical cut, which a dropdown has nowhere to put a number for; a
 /// workspace that wants one writes it by hand and the editor leaves it alone.
 ///
+/// Views no longer take a grain as a key of their own: a view that groups by
+/// year says so in its `key:` expression (`year(created)`), which is text.
+///
 /// [`every_offered_term_is_one_prov_accepts`]: self
-pub const VIEW_GRAINS: &[(&str, &str)] = &[
-    ("year", "One group per year"),
-    ("month", "One group per month"),
-    ("day", "One group per day"),
-    ("initial", "One group per first letter"),
+/// [`the_nests_are_provs`]: self
+pub const FILING_NESTS: &[(&str, &str)] = &[
+    ("year", "Under an index per year"),
+    ("month", "Under an index per month, inside its year"),
+    ("day", "Under an index per day, inside its month"),
+    ("initial", "Under an index per first letter"),
+    ("ref", "Under the document the field links to"),
 ];
 
 /// Build a flower [`Schema`] for a workspace's config document.
 ///
 /// `config` is the workspace's *resolved* config; it is read for the one thing
 /// that can only be written against a particular workspace — which field names
-/// a view may group by.
+/// a filing entry may file by.
 pub fn config_schema(config: &WorkspaceConfig) -> Schema {
     Schema::new(config_rules(config))
 }
@@ -254,14 +260,26 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
         // through a relation, so flower's Reference constraint (which names a
         // relation) would describe it wrongly.
         rules.push(text(at("vocabulary"), "Vocabulary document", Icon::Link));
-        rules.push(costly_when(
-            toggle(at("reify"), "Give each value its own document"),
-            true,
-            Severity::Confirm,
-            "Creates a document for every distinct value of this field across the workspace.",
+        // Whether the vocabulary is a flat `terms:` store or an index of term
+        // documents is not a key here: prov reads it off the store the pointer
+        // names (a `vocabulary:` marker means flat), so there is no toggle that
+        // could disagree with it.
+        //
+        // When prov writes the current time into this field. Only the unscoped
+        // declaration's is read, and only one field may claim each; offered in
+        // both spellings anyway, because a list may carry the unscoped
+        // fallback, and prov's `check` names the scoped or repeated one.
+        rules.push(choice(
+            at("stamp"),
+            "Stamped by prov",
+            Icon::Clock,
+            &[
+                ("edit", "When the content changes"),
+                ("create", "When the document is made"),
+            ],
         ));
         // The index this declaration governs the documents under, resolved as a
-        // view's `under` is — a path, an `id:`, or a title.
+        // filing entry's `under` is — a path, an `id:`, or a title.
         rules.push(text(
             at("under"),
             "Governs documents under this index (empty covers the whole workspace)",
@@ -302,16 +320,6 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
                 "Ids leave the registry, so it can no longer be rebuilt from itself.",
             )),
     );
-    rules.push(text(
-        path(&["updated"]),
-        "Field stamped on save (empty turns it off)",
-        Icon::Clock,
-    ));
-    rules.push(text(
-        path(&["created"]),
-        "Field stamped when a document is made (empty turns it off)",
-        Icon::Clock,
-    ));
     // Read from the workspace node only — the one policy home reachable before
     // the root is known. Drawn as a link, not a `Ref`, for the reason
     // `fields.*.vocabulary` is.
@@ -373,12 +381,14 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
     // Top-level and prov's own format, so every tool over the workspace reads
     // the same views.
     //
-    // The three clauses below are deliberately three, not one. `group`/`by` say
-    // how records become groups (MoReq2010's *classification*); `under` says
-    // which records the view covers at all (*aggregation*); `nest` says how a
-    // new record is filed. Collapsing them — deriving the folder shape from the
-    // grouping grain — is the arrangement MoReq2010 §1.4.5 permits and warns
-    // about, because it makes a reading preference silently relocate files.
+    // Views and filing are two axes, not one. A view reads: `where` says which
+    // records it covers and `key` how they become groups (MoReq2010's
+    // *classification*). A filing entry writes: which index a new record hangs
+    // under (*aggregation*). Collapsing them — deriving the folder shape from
+    // the grouping grain — is the arrangement MoReq2010 §1.4.5 permits and
+    // warns about, because it makes a reading preference silently relocate
+    // files. prov used to spell both inside one view (`under`, `nest`); it now
+    // keeps them apart, and so does this schema.
     rules.push(text(
         path(&["views", "*", "label"]),
         "View name",
@@ -389,87 +399,93 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
         "View glyph",
         Icon::Text,
     ));
-    // Offered, not enforced, for two independent reasons. A view may
+    // `where` and `key` are CEL expressions — `status in ['open', 'blocked']`,
+    // `year(created)` — over the document's fields and `doc` itself. Text, not a
+    // picker: an expression is a sentence, and the only vocabulary a row could
+    // offer (a field name) is the smallest part of one. prov parses both when
+    // the config is checked, so a typo is its `bad_expression` finding rather
+    // than a view that silently shows nothing. The description names prov's own
+    // functions, read off prov, so a reader knows `under('Tasks')` is there
+    // without leaving the editor.
+    let functions = prov::views::FUNCTIONS.join(", ");
+    rules.push(described(
+        text(
+            path(&["views", "*", "where"]),
+            "Only documents where (empty covers every document)",
+            Icon::Text,
+        ),
+        &format!(
+            "A CEL condition over the document's fields and `doc`. prov's functions: {functions}."
+        ),
+    ));
+    rules.push(described(
+        text(path(&["views", "*", "key"]), "Groups by", Icon::Enum),
+        &format!("A CEL expression naming each document's group. prov's functions: {functions}."),
+    ));
+
+    // ── filing: where a new record goes ─────────────────────────────────────
+    rules.push(text(
+        path(&["filing", "*", "label"]),
+        "Filing name",
+        Icon::Text,
+    ));
+    // A link to the index new records go below. Text with a link glyph for the
+    // same reason `fields.*.vocabulary` is: it is resolved as a config *value*,
+    // not through a relation, so flower's `Reference` constraint (which names a
+    // relation) would describe it wrongly.
+    rules.push(text(
+        path(&["filing", "*", "under"]),
+        "Files under (empty files below the root)",
+        Icon::Link,
+    ));
+    // Offered, not enforced, for two independent reasons. An entry may
     // legitimately name a field the workspace has not declared yet (the
     // declaration usually follows the first document that carries it), and
     // rejecting that would make the two settings orderable only one way. And
-    // prov itself imposes no vocabulary here — `group:` takes any field key —
+    // prov itself imposes no vocabulary here — `field:` takes any field path —
     // so a closed list would be this crate inventing a rule prov does not have.
     //
     // Every declared field is offered, not some filtered subset: which fields
-    // are *worth* grouping by is a judgement about a particular UI, and an app
+    // are *worth* filing by is a judgement about a particular UI, and an app
     // that has one shadows this rule with its own (see `crate::rules`).
     //
-    // Governed twice because `group:` takes both shapes prov writes: a bare
-    // string for a one-field view, a list for a chain (`[date_of_document,
-    // created, updated]`). A rule for only the scalar would leave every chained
-    // view's rows untyped.
+    // Governed twice because `field:` takes both shapes prov writes: a bare
+    // string for one field, a list tried in order (`[date_of_document,
+    // created]`). A rule for only the scalar would leave every listed entry's
+    // rows untyped.
     rules.push(open_choice_terms(
-        path(&["views", "*", "group"]),
-        "Groups by",
+        path(&["filing", "*", "field"]),
+        "Files by",
         Icon::Enum,
-        group_terms(config),
+        field_terms(config),
     ));
     rules.push(open_choice_terms(
-        path(&["views", "*", "group", "[]"]),
-        "Groups by",
+        path(&["filing", "*", "field", "[]"]),
+        "Files by",
         Icon::Enum,
-        group_terms(config),
+        field_terms(config),
     ));
     rules.push(choice(
-        path(&["views", "*", "by"]),
-        "Grain",
-        Icon::Clock,
-        VIEW_GRAINS,
-    ));
-    // A link to the index this view's records hang under. Text with a link glyph
-    // for the same reason `fields.*.vocabulary` is: it is resolved as a config
-    // *value*, not through a relation, so flower's `Reference` constraint (which
-    // names a relation) would describe it wrongly.
-    rules.push(text(
-        path(&["views", "*", "under"]),
-        "Filed under (empty covers the whole workspace)",
+        path(&["filing", "*", "nest"]),
+        "Nests new entries (empty files them flat)",
         Icon::Link,
-    ));
-    rules.push(choice(
-        path(&["views", "*", "nest"]),
-        "New entries nest by (empty files them flat)",
-        Icon::Link,
-        VIEW_GRAINS,
-    ));
-    // `where:` — the conditions a document in scope must also meet. Only the two
-    // *predicates* are governed: `has` names a field, and `equals` is a mapping
-    // of field to value, so both have a leaf a picker can fill. The combinators
-    // (`not`, `any-of`, `all-of`) nest conditions inside conditions to arbitrary
-    // depth, which is a tree the row editor has no shape for — those stay
-    // untyped text, which reads them back unchanged rather than rewriting them
-    // into something else.
-    rules.push(open_choice_terms(
-        path(&["views", "*", "where", "has"]),
-        "Only documents that have",
-        Icon::Enum,
-        group_terms(config),
-    ));
-    rules.push(open_choice_terms(
-        path(&["views", "*", "where", "has", "[]"]),
-        "Only documents that have",
-        Icon::Enum,
-        group_terms(config),
-    ));
-    rules.push(text(
-        path(&["views", "*", "where", "equals", "*"]),
-        "…and whose value is",
-        Icon::Text,
+        FILING_NESTS,
     ));
 
     rules
 }
 
-/// What a view's `group:` may name: any field this workspace declares.
+/// A rule with the one sentence a reader needs to use it.
+fn described(mut rule: FieldRule, why: &str) -> FieldRule {
+    rule.present = std::mem::take(&mut rule.present).description(why);
+    rule
+}
+
+/// What a filing entry's `field:` may name: any field this workspace declares.
 ///
-/// Offered as a convenience, never as a restriction — prov accepts any field key
-/// here, including one not yet declared. See the `views.*.group` rule.
-fn group_terms(config: &WorkspaceConfig) -> Vec<Term> {
+/// Offered as a convenience, never as a restriction — prov accepts any field
+/// path here, including one not yet declared. See the `filing.*.field` rule.
+fn field_terms(config: &WorkspaceConfig) -> Vec<Term> {
     config
         .fields
         .keys()
@@ -651,8 +667,11 @@ mod tests {
     use super::*;
     use flower_core::{FieldRuleExt, PathPat, Seg, SegPat};
     use prov::config::{FieldSpec, OpenClosed};
+    use prov::filing::{FilingSpec, Nest};
+    use prov::grain::Grain;
     use prov::meta::{Mapping, Value};
-    use prov::{ConfigIssueKind, FieldType as ProvFieldType};
+    use prov::views::{Expression, RETIRED_VIEW_KEYS};
+    use prov::{ConfigIssueKind, FieldType as ProvFieldType, Stamp, ViewSpec};
 
     fn config_with(fields: &[(&str, Option<ProvFieldType>)]) -> WorkspaceConfig {
         let mut config = WorkspaceConfig::default();
@@ -663,9 +682,9 @@ mod tests {
                     ty: *ty,
                     values: OpenClosed::default(),
                     vocabulary: None,
-                    reify: false,
                     default: None,
                     under: None,
+                    stamp: None,
                 }],
             );
         }
@@ -703,8 +722,8 @@ mod tests {
     /// picker — the setting would look applied and do nothing — so the spellings
     /// are checked against prov's own linter rather than against a copy of them.
     ///
-    /// This is also what holds [`VIEW_GRAINS`] to `prov::views::Grain`: the
-    /// grains are a closed picker, so a grain prov renames fails right here.
+    /// This is also what holds [`FILING_NESTS`] to `prov::filing::Nest`: the
+    /// nests are a closed picker, so a spelling prov renames fails right here.
     #[test]
     fn every_offered_term_is_one_prov_accepts() {
         let schema = config_schema(&config_with(&[]));
@@ -721,10 +740,10 @@ mod tests {
             for term in terms {
                 let issues = prov::diagnose(&nested(&path, &term.value));
                 // Only findings *about this key*. `nested` builds the smallest
-                // surface that places the term, which for a view is one `by:`
-                // with no `group:` beside it — so prov also reports the missing
-                // sibling, correctly, and about a key this test is not asking
-                // after. Judging the term by that would fail every entry inside
+                // surface that places the term, which for a filing entry is one
+                // `nest:` with no `field:` beside it — so prov also reports the
+                // missing sibling, correctly, and about a key this test is not
+                // asking after. Judging the term by that would fail every entry inside
                 // a container key that has a required member.
                 let bad: Vec<_> = issues
                     .iter()
@@ -781,13 +800,42 @@ mod tests {
                     ty: Some(ProvFieldType::Str),
                     values: OpenClosed::Closed,
                     vocabulary: Some(format!("{under}.md")),
-                    reify: false,
                     default: Some(Value::String("open".into())),
                     under: Some(under.to_string()),
+                    stamp: None,
                 })
                 .to_vec(),
         );
-        config.created = "created".to_string();
+        // The two stamps, each declared on its field — a stamp alone is a
+        // whole declaration.
+        for (name, stamp) in [("created", Stamp::Create), ("updated", Stamp::Edit)] {
+            config.fields.insert(
+                name.to_string(),
+                vec![FieldSpec {
+                    ty: None,
+                    values: OpenClosed::default(),
+                    vocabulary: None,
+                    default: None,
+                    under: None,
+                    stamp: Some(stamp),
+                }],
+            );
+        }
+        // A view with every key it takes, and a filing entry filing by a list
+        // of fields.
+        config.views.push(ViewSpec {
+            label: Some("Open tasks".into()),
+            icon: Some("checklist".into()),
+            filter: Some(Expression::parse("under('Tasks') && status == 'open'").unwrap()),
+            ..ViewSpec::new("open", Expression::parse("year(created)").unwrap())
+        });
+        config.filing.push(FilingSpec {
+            name: "daily".into(),
+            label: Some("Daily".into()),
+            under: Some("[[Daily]]".into()),
+            field: vec!["date_of_document".into(), "created".into()],
+            nest: Some(Nest::Grain(Grain::Month)),
+        });
         config.root = Some("README.md".to_string());
         let schema = config_schema(&config);
 
@@ -896,11 +944,11 @@ mod tests {
         }
     }
 
-    /// The view block is governed through the wildcard, and `group:` is offered
-    /// rather than enforced — prov accepts any field key there, including one
-    /// the workspace has not declared yet.
+    /// The view block is governed through the wildcard: its two expressions are
+    /// text, and none of the keys prov retired is governed — a row for `group:`
+    /// would offer to write a view prov no longer reads.
     #[test]
-    fn a_view_entry_is_governed_and_its_grouping_stays_open() {
+    fn a_view_entry_is_governed_as_two_expressions() {
         let schema = config_schema(&config_with(&[("people", Some(ProvFieldType::Str))]));
         let view = |leaf: &str| {
             vec![
@@ -910,38 +958,109 @@ mod tests {
             ]
         };
 
-        let by = schema.rule_for(&view("by")).expect("views.*.by");
-        let (grains, closed) = by.enum_constraint().expect("a grain picker");
-        assert!(closed, "a grain prov cannot parse is not a grain");
+        for leaf in ["where", "key"] {
+            let rule = schema
+                .rule_for(&view(leaf))
+                .unwrap_or_else(|| panic!("views.*.{leaf}"));
+            assert_eq!(rule.ty, Some(FieldType::Str), "{leaf} is an expression");
+            assert!(rule.enum_constraint().is_none(), "{leaf} is not a picker");
+            let why = rule.present.description.as_deref().unwrap_or_default();
+            assert!(
+                why.contains("under"),
+                "{leaf} names prov's functions: {why}"
+            );
+        }
+        assert!(schema.rule_for(&view("label")).is_some());
+        assert!(schema.rule_for(&view("icon")).is_some());
+
+        for retired in RETIRED_VIEW_KEYS {
+            assert!(
+                schema.rule_for(&view(retired)).is_none(),
+                "views.*.{retired} is retired and should not be offered"
+            );
+        }
+    }
+
+    /// Filing is its own block: `nest:` is a closed picker over prov's nests,
+    /// and `field:` is offered rather than enforced, in both of its shapes.
+    #[test]
+    fn a_filing_entry_is_governed_and_its_field_stays_open() {
+        let schema = config_schema(&config_with(&[("people", Some(ProvFieldType::Str))]));
+        let entry = |leaf: &str| {
+            vec![
+                Seg::Key("filing".into()),
+                Seg::Key("daily".into()),
+                Seg::Key(leaf.into()),
+            ]
+        };
+
+        let nest = schema.rule_for(&entry("nest")).expect("filing.*.nest");
+        let (nests, closed) = nest.enum_constraint().expect("a nest picker");
+        assert!(closed, "a nest prov cannot parse files nothing");
         assert_eq!(
-            grains.iter().map(|t| t.value.as_str()).collect::<Vec<_>>(),
-            VIEW_GRAINS.iter().map(|(v, _)| *v).collect::<Vec<_>>()
+            nests.iter().map(|t| t.value.as_str()).collect::<Vec<_>>(),
+            FILING_NESTS.iter().map(|(v, _)| *v).collect::<Vec<_>>()
         );
 
-        let group = schema.rule_for(&view("group")).expect("views.*.group");
-        let (fields, closed) = group.enum_constraint().expect("a field picker");
-        assert!(!closed, "prov imposes no vocabulary on `group:`");
+        let field = schema.rule_for(&entry("field")).expect("filing.*.field");
+        let (fields, closed) = field.enum_constraint().expect("a field picker");
+        assert!(!closed, "prov imposes no vocabulary on `field:`");
         assert_eq!(
             fields.iter().map(|t| t.value.as_str()).collect::<Vec<_>>(),
             ["people"]
         );
 
-        // The chained form (`group: [a, b]`) is governed too, or every chained
-        // view's rows would come out untyped.
+        // The list form (`field: [a, b]`) is governed too, or every entry that
+        // falls back through fields would come out untyped.
         assert!(
             schema
                 .rule_for(&[
-                    Seg::Key("views".into()),
+                    Seg::Key("filing".into()),
                     Seg::Key("daily".into()),
-                    Seg::Key("group".into()),
+                    Seg::Key("field".into()),
                     Seg::Index(0),
                 ])
                 .is_some(),
-            "the list form of `group:` should be governed"
+            "the list form of `field:` should be governed"
         );
-        assert!(schema.rule_for(&view("label")).is_some());
-        assert!(schema.rule_for(&view("under")).is_some());
-        assert!(schema.rule_for(&view("nest")).is_some());
+        assert!(schema.rule_for(&entry("label")).is_some());
+        assert!(schema.rule_for(&entry("under")).is_some());
+    }
+
+    /// Every nest prov accepts is offered, and nothing else: the picker's
+    /// spellings are prov's list, in prov's order.
+    #[test]
+    fn the_nests_are_provs() {
+        assert_eq!(
+            FILING_NESTS.iter().map(|(v, _)| *v).collect::<Vec<_>>(),
+            prov::filing::NESTS
+        );
+    }
+
+    /// A field's stamp is a closed picker over prov's two, and the top-level
+    /// `updated`/`created` keys prov stopped reading are not offered.
+    #[test]
+    fn a_stamp_is_declared_on_its_field() {
+        let schema = config_schema(&config_with(&[]));
+        let field = |leaf: &str| {
+            vec![
+                Seg::Key("fields".into()),
+                Seg::Key("updated".into()),
+                Seg::Key(leaf.into()),
+            ]
+        };
+        let stamp = schema.rule_for(&field("stamp")).expect("fields.*.stamp");
+        let (terms, closed) = stamp.enum_constraint().expect("a stamp picker");
+        assert!(closed);
+        for term in terms {
+            assert!(
+                Stamp::from_config_str(&term.value).is_some(),
+                "{} is not a stamp prov reads",
+                term.value
+            );
+        }
+        assert!(schema.rule_for(&[Seg::Key("updated".into())]).is_none());
+        assert!(schema.rule_for(&[Seg::Key("created".into())]).is_none());
     }
 
     /// The composition an application overlay depends on: a rule *prepended* to
@@ -954,19 +1073,19 @@ mod tests {
     #[test]
     fn a_prepended_rule_shadows_the_generic_one() {
         let config = config_with(&[("people", Some(ProvFieldType::Str))]);
-        let group = vec![
-            Seg::Key("views".into()),
+        let field = vec![
+            Seg::Key("filing".into()),
             Seg::Key("daily".into()),
-            Seg::Key("group".into()),
+            Seg::Key("field".into()),
         ];
 
         let mut overlaid = vec![open_choice_terms(
             PathPat(vec![
-                SegPat::Key("views".into()),
+                SegPat::Key("filing".into()),
                 SegPat::AnyKey,
-                SegPat::Key("group".into()),
+                SegPat::Key("field".into()),
             ]),
-            "Groups by",
+            "Files by",
             Icon::Enum,
             vec![term("date", "The document's date")],
         )];
@@ -974,7 +1093,7 @@ mod tests {
         let schema = Schema::new(overlaid);
 
         let (terms, _) = schema
-            .rule_for(&group)
+            .rule_for(&field)
             .and_then(|r| r.enum_constraint())
             .expect("the overlay rule");
         assert_eq!(

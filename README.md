@@ -576,8 +576,9 @@ silently dead — which is why there is a test asserting the order.
 `document_rules` is the same door one document over, for a **content**
 document's frontmatter, and the ordering inside it is the same argument made
 twice. A workspace's `fields` declarations come first, prov's own kernel keys
-(`title`, `id`, `content`/`manifest`/`attachment`/`content_hash`, and the root's
-inline `prov:` block) come last — so a workspace that declares `fields.title`
+(`title`, `id`, `content`/`manifest`/`attachment`/`content_hash`, the fields
+the workspace declares `stamp: edit` or `stamp: create`, and the root's inline
+`prov:` block) come last — so a workspace that declares `fields.title`
 shadows prov's rule for it rather than being shadowed by it, and an app that
 prepends shadows both.
 

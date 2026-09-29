@@ -215,6 +215,14 @@ fn rules_over<'a>(
     // Field declarations → a typed rule, carrying an Enum constraint when the
     // field also names a vocabulary.
     for (field, spec, vocabulary) in fields {
+        // A declaration that says only `stamp:` is the kernel's to describe:
+        // prov writes an instant there and nothing else, so a rule here — with
+        // no type, no vocabulary and no gloss — would only shadow the kernel's
+        // clock row with a blank one. A stamped field that also declares a type
+        // or a vocabulary keeps its own rule, as any declared field does.
+        if spec.stamp.is_some() && spec.ty.is_none() && spec.vocabulary.is_none() {
+            continue;
+        }
         // prov's declared type wins. A controlled field that declares none is
         // text, because that is what a vocabulary term is.
         let ty = spec
@@ -351,14 +359,21 @@ pub fn kernel_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
         ),
     ];
 
-    // The stamped field, under whatever name this workspace gave it. Absent
-    // when the workspace disabled the axis, which is the default — there is no
-    // key to govern, and inventing `updated` would govern a field somebody else
-    // owns.
-    if !config.updated.is_empty() {
+    // The stamped fields, under whatever names this workspace gave them — read
+    // from prov, which knows them by the `stamp:` their declarations carry.
+    // Absent when the workspace declares none, which is the default — there is
+    // no key to govern, and inventing `updated` would govern a field somebody
+    // else owns.
+    if let Some(updated) = config.updated_field() {
         rules.push(described(
-            text(path(&[&config.updated]), "Last updated", Icon::Clock),
+            text(path(&[updated]), "Last updated", Icon::Clock),
             "Stamped in RFC 3339 UTC when the content changes; prov reads it back.",
+        ));
+    }
+    if let Some(created) = config.created_field() {
+        rules.push(described(
+            text(path(&[created]), "Created", Icon::Clock),
+            "Stamped in RFC 3339 UTC when prov makes the document.",
         ));
     }
 
@@ -433,9 +448,9 @@ mod tests {
                 ty: None,
                 values: OpenClosed::Closed,
                 vocabulary: Some("audiences.yaml".to_string()),
-                reify: false,
                 default: None,
                 under: None,
+                stamp: None,
             }],
         );
         // A type with no vocabulary — nothing to validate against, but the
@@ -446,9 +461,9 @@ mod tests {
                 ty: Some(prov::FieldType::Extended(prov::ExtKind::LocalDate)),
                 values: OpenClosed::default(),
                 vocabulary: None,
-                reify: false,
                 default: None,
                 under: None,
+                stamp: None,
             }],
         );
 
@@ -459,6 +474,7 @@ mod tests {
                 id: None,
                 means: Some("Anyone".to_string()),
                 retired: false,
+                holds: false,
             },
         );
         terms.insert(
@@ -467,6 +483,7 @@ mod tests {
                 id: None,
                 means: None,
                 retired: false,
+                holds: false,
             },
         );
         let mut vocabs = BTreeMap::new();
@@ -561,10 +578,20 @@ mod tests {
         let bare = schema_from_config(&WorkspaceConfig::default(), &BTreeMap::new());
         assert!(bare.rule_for(&[Seg::Key("modified".into())]).is_none());
 
-        let config = WorkspaceConfig {
-            updated: "modified".to_string(),
-            ..WorkspaceConfig::default()
-        };
+        // A stamp alone is a whole declaration: prov needs no type to know
+        // what it writes there.
+        let mut config = WorkspaceConfig::default();
+        config.fields.insert(
+            "modified".to_string(),
+            vec![prov::FieldSpec {
+                ty: None,
+                values: OpenClosed::default(),
+                vocabulary: None,
+                default: None,
+                under: None,
+                stamp: Some(prov::Stamp::Edit),
+            }],
+        );
         let schema = schema_from_config(&config, &BTreeMap::new());
         let rule = schema
             .rule_for(&[Seg::Key("modified".into())])
@@ -602,9 +629,9 @@ mod tests {
                 ty: None,
                 values: OpenClosed::Closed,
                 vocabulary: Some("titles.yaml".to_string()),
-                reify: false,
                 default: None,
                 under: None,
+                stamp: None,
             }],
         );
         let schema = schema_from_config(&config, &BTreeMap::new());

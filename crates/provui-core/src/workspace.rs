@@ -36,8 +36,8 @@ use flower_core::{Choice, Schema};
 use prov::index::FileIndex;
 use prov::workspace::FieldScopes;
 use prov::{
-    Backlink, Discovery, IdIndex, Settings, StdFs, Target, Workspace, WorkspaceConfig, block_on,
-    discover,
+    Backlink, Discovery, IdIndex, Settings, StdFs, Target, VocabularyShape, Workspace,
+    WorkspaceConfig, block_on, discover,
 };
 
 use crate::facets::Facets;
@@ -776,13 +776,22 @@ fn load_vocabularies(
             };
             // A reified vocabulary's terms are documents down the spanning
             // tree, not rows in a flat store, so it is read a different way.
-            // What makes it reified is the declaration, not anything the target
-            // says about itself.
-            let vocabulary = if spec.reify {
-                block_on(ws.load_reified_vocabulary(root_doc, field, spec))
-            } else {
-                block_on(ws.load_vocabulary(root_doc, pointer))
-            };
+            // Which one it is, prov reads off the store (a `vocabulary:` marker
+            // means a flat `terms:` store, anything else an index of term
+            // documents) — the same question, asked the same way, as prov's own
+            // loader, which is crate-private and so cannot be called here. A
+            // pointer that resolves to nothing readable falls to the flat
+            // loader, which answers `None` for it, as prov's does.
+            let vocabulary = block_on(async {
+                match ws.vocabulary_shape(root_doc, pointer).await? {
+                    Some(VocabularyShape::Reified) => {
+                        ws.load_reified_vocabulary(root_doc, field, spec).await
+                    }
+                    Some(VocabularyShape::Flat) | None => {
+                        ws.load_vocabulary(root_doc, pointer).await
+                    }
+                }
+            });
             if let Ok(Some(vocabulary)) = vocabulary {
                 loaded.insert(field.clone(), index, vocabulary);
             }
