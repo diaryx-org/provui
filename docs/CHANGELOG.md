@@ -32,6 +32,23 @@ _No commits since the last tag._
 
 <!-- git-cliff:end -->
 
+## v0.6.0 — 2026-09-29
+
+### Breaking
+
+- **deps** — prov 0.16, with the config editor on its new vocabulary ([`d6f3f0e`](https://github.com/diaryx-org/provui/commit/d6f3f0e0307d9ee7893422c1f87848ac1b4dc918))
+
+### Behavioural changes
+
+- a vocabulary pointer at a document without the `vocabulary:` marker is loaded as a reified index, and a flat store is loaded flat whatever its declaration said.
+
+- the config editor offers `views.*.where`/`key` as expressions and a `filing.*` block, and no longer offers `views.*.group`/`by`/`under`/`nest`, `views.*.where.has`/`equals`, `fields.*.reify`, or top-level `updated`/`created`.
+
+- the stamp rows and the managed stamp key follow `fields.<f>.stamp`; a workspace still naming its stamp with top-level `updated:` gets no "Last updated" row and an editable field, as prov stamps nothing there.
+
+- a content document's field declared `stamp: create` is governed as a "Created" clock row.
+
+
 ## v0.5.6 — 2026-09-28
 
 ### Breaking
