@@ -1298,8 +1298,7 @@ dependencies = [
 [[package]]
 name = "prov"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9aa9adfbeb780111175401046f03e7f3a7cc0297edf0ed463ddc81680c94975"
+source = "git+https://github.com/diaryx-org/prov?branch=main#84a84d2b7416129fad2ea67f4ffa162bc0bdaeb4"
 dependencies = [
  "edtf-normalize",
  "fig",
@@ -1320,8 +1319,7 @@ dependencies = [
 [[package]]
 name = "prov-config"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb31fefced10c70be382bebb62a3aa3b7506ac71c9a2c1d471e50aef3e40d37a"
+source = "git+https://github.com/diaryx-org/prov?branch=main#84a84d2b7416129fad2ea67f4ffa162bc0bdaeb4"
 dependencies = [
  "fig",
  "fig-schema",
@@ -1336,8 +1334,7 @@ dependencies = [
 [[package]]
 name = "prov-exports"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff2ae4fa05d1dc55b6abdd2fc0eab3dc797e8be9e04546e18ed2b47368c84616"
+source = "git+https://github.com/diaryx-org/prov?branch=main#84a84d2b7416129fad2ea67f4ffa162bc0bdaeb4"
 dependencies = [
  "prov-graph",
  "prov-views",
@@ -1346,8 +1343,7 @@ dependencies = [
 [[package]]
 name = "prov-filing"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4968a84945ab426fba3fe301055ddf9450c043026abc23b1b89a1535f0c2600"
+source = "git+https://github.com/diaryx-org/prov?branch=main#84a84d2b7416129fad2ea67f4ffa162bc0bdaeb4"
 dependencies = [
  "prov-grain",
  "prov-graph",
@@ -1356,8 +1352,7 @@ dependencies = [
 [[package]]
 name = "prov-grain"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ad67df48cfc9d39ba03344eae86a28b4e07ea9501855bffff59fd38efa44d6e2"
+source = "git+https://github.com/diaryx-org/prov?branch=main#84a84d2b7416129fad2ea67f4ffa162bc0bdaeb4"
 dependencies = [
  "edtf-core",
  "prov-graph",
@@ -1366,8 +1361,7 @@ dependencies = [
 [[package]]
 name = "prov-graph"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e571a9c50f8003ef67c4a9529b35acd36f784930a341145cf0090fbefdf528cb"
+source = "git+https://github.com/diaryx-org/prov?branch=main#84a84d2b7416129fad2ea67f4ffa162bc0bdaeb4"
 dependencies = [
  "fig",
  "fs-transaction 0.4.0",
@@ -1381,8 +1375,7 @@ dependencies = [
 [[package]]
 name = "prov-store"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e53012c4cf8871b102ca3300f23d84dab72f9aff0de56b9b3604ec8a35718d0"
+source = "git+https://github.com/diaryx-org/prov?branch=main#84a84d2b7416129fad2ea67f4ffa162bc0bdaeb4"
 dependencies = [
  "fig",
  "fs-transaction 0.4.0",
@@ -1392,8 +1385,7 @@ dependencies = [
 [[package]]
 name = "prov-views"
 version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11ddb368db199617c14ae8bdd8f463e2dfc16b2b085d87785d9f7078804150c4"
+source = "git+https://github.com/diaryx-org/prov?branch=main#84a84d2b7416129fad2ea67f4ffa162bc0bdaeb4"
 dependencies = [
  "cel",
  "prov-grain",

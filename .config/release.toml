@@ -8,8 +8,7 @@ release_branch = "main"
 # What to run before cutting. Each repo owns its own CI; this names it.
 verify = "cargo xtask ci"
 
-# What pushing the tag sets off, most consequential first. The warning printed
-# before the push is handed back to you is composed from these.
-[[tag_starts]]
-workflow = "publish.yml"
-does = "uploads `provui-core` to crates.io"
+# Not on crates.io: provui is consumed from git, by commit, so a tag is a name
+# for a commit and sets nothing off. provui-core 0.7.0 was the last version
+# uploaded.
+publishes = false

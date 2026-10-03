@@ -24,12 +24,20 @@ rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/diaryx-org/provui"
 readme = "README.md"
+# Not on crates.io. provui-core is consumed from git, and its prov dependency is
+# a git one, which crates.io would refuse anyway.
+publish = false
 
 [workspace.dependencies]
 # The self-describing plaintext workspace library. Defaults to `yaml` alone,
 # which is the carrier `---` frontmatter uses; a frontend that wants JSON/TOML
 # vaults turns those features on.
-prov = "0.18.0"
+#
+# From git, not crates.io: prov is an org repository that does not publish, and
+# every repository that builds against it names this same source — `branch =
+# "main"`, written identically — so diaryx, which links provui-core and prov
+# both, holds one prov, at the commit its own Cargo.lock records.
+prov = { git = "https://github.com/diaryx-org/prov", branch = "main" }
 # The Zig-backed config AST + lossless editor prov and flower are both built on.
 # Named directly because `ProvBackend` reaches for `fig::Embed::replace_body` and
 # `fig::Value`, which are the tree and the splice both halves agree on.
@@ -63,9 +71,8 @@ leaf-core = { version = "0.5.0", default-features = false }
 # after turning a patch on; `cargo tree -i leaf-core` is what proves it took.)
 #
 # They are pinned to the newest *published* version rather than to whatever the
-# checkout happens to be. `provui-core` is a publishable crate, and a
-# requirement no registry can satisfy would make it unbuildable for anyone
-# without these checkouts — the patch is a local convenience and must never be
-# load-bearing for it.
+# checkout happens to be. A requirement no registry can satisfy would make this
+# workspace unbuildable for anyone without these checkouts — the patch is a
+# local convenience and must never be load-bearing for it.
 leaf-ratatui = "0.5.0"
 flower-ratatui = "0.6.3"
