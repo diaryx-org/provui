@@ -50,29 +50,21 @@ fs-transaction = "0.2"
 # The generic structural metadata editor. `ProvBackend` is an implementation of
 # its `Backend` trait; nothing here is upstreamed into it, because flower-core
 # does not know the word "prov" and should not learn it.
-flower-core = "0.6.3"
+flower-core = { git = "https://github.com/diaryx-org/flower", branch = "main" }
 # The rich-text body editor over twig. `default-features = false` so a consumer
 # that also links `leaf-ffi` unifies on one leaf-core copy and one twig-sys
 # build rather than two.
-leaf-core = { version = "0.5.0", default-features = false }
+leaf-core = { git = "https://github.com/diaryx-org/leaf", branch = "main", default-features = false }
 
-# The two terminal widgets, which `provui-tui` embeds. Both are on crates.io and
-# are consumed from it, like everything else here; to build against a checkout
-# instead, turn on the `[patch.crates-io]` in `~/diaryx/.cargo/config.toml`
-# (see `~/diaryx/.cargo/patches.toml`). No path across a repository boundary
-# appears in this file, so nothing here has to be undone to publish.
+# The two terminal widgets, which `provui-tui` embeds.
 #
-# Each widget is pinned to the same patch level as its core, and the cores are
-# pinned to a patch level at all, for one reason: each widget path-depends on
-# its own core inside its own workspace, and a requirement loose enough to admit
-# an older registry copy lets the lockfile keep one alongside a patched
-# checkout — at which point the graph holds two `Model`s and two `Doc`s that are
-# not the same type. (`cargo update -p <crate>` is what forces re-resolution
-# after turning a patch on; `cargo tree -i leaf-core` is what proves it took.)
-#
-# They are pinned to the newest *published* version rather than to whatever the
-# checkout happens to be. A requirement no registry can satisfy would make this
-# workspace unbuildable for anyone without these checkouts — the patch is a
-# local convenience and must never be load-bearing for it.
-leaf-ratatui = "0.5.0"
-flower-ratatui = "0.6.3"
+# flower and leaf, like prov, come from git, and every crate of each is named
+# with the same source — `branch = "main"`, spelled identically here and in
+# diaryx. That is what keeps one `Model` and one `Doc`: each widget
+# path-depends on its own core inside its own repository, so a widget and a
+# core from one source resolve to one copy, and a core from anywhere else would
+# be a second, different type. (`cargo tree -i leaf-core` proves there is
+# one.) To build against a checkout instead, turn on the git-URL patches in
+# `~/diaryx/.cargo/patches.toml`.
+leaf-ratatui = { git = "https://github.com/diaryx-org/leaf", branch = "main" }
+flower-ratatui = { git = "https://github.com/diaryx-org/flower", branch = "main" }
