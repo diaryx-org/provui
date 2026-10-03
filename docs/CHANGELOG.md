@@ -32,6 +32,13 @@ _No commits since the last tag._
 
 <!-- git-cliff:end -->
 
+## v0.7.0 — 2026-10-03
+
+### Breaking
+
+- **deps** — move to prov 0.18, leaf 0.5 and twig 4 ([`73423d9`](https://github.com/diaryx-org/provui/commit/73423d94a9cdad6645c1260ed515fa7dba5711ce))
+
+
 ## v0.6.0 — 2026-09-29
 
 ### Breaking
