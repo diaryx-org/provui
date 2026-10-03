@@ -29,7 +29,7 @@ readme = "README.md"
 # The self-describing plaintext workspace library. Defaults to `yaml` alone,
 # which is the carrier `---` frontmatter uses; a frontend that wants JSON/TOML
 # vaults turns those features on.
-prov = "0.17.0"
+prov = "0.18.0"
 # The Zig-backed config AST + lossless editor prov and flower are both built on.
 # Named directly because `ProvBackend` reaches for `fig::Embed::replace_body` and
 # `fig::Value`, which are the tree and the splice both halves agree on.
@@ -46,7 +46,7 @@ flower-core = "0.6.3"
 # The rich-text body editor over twig. `default-features = false` so a consumer
 # that also links `leaf-ffi` unifies on one leaf-core copy and one twig-sys
 # build rather than two.
-leaf-core = { version = "0.4.4", default-features = false }
+leaf-core = { version = "0.5.0", default-features = false }
 
 # The two terminal widgets, which `provui-tui` embeds. Both are on crates.io and
 # are consumed from it, like everything else here; to build against a checkout
@@ -67,5 +67,5 @@ leaf-core = { version = "0.4.4", default-features = false }
 # requirement no registry can satisfy would make it unbuildable for anyone
 # without these checkouts — the patch is a local convenience and must never be
 # load-bearing for it.
-leaf-ratatui = "0.4.4"
+leaf-ratatui = "0.5.0"
 flower-ratatui = "0.6.3"

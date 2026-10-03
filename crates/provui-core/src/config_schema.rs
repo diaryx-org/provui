@@ -835,6 +835,7 @@ mod tests {
             under: Some("[[Daily]]".into()),
             field: vec!["date_of_document".into(), "created".into()],
             nest: Some(Nest::Grain(Grain::Month)),
+            kind: Vec::new(),
         });
         config.root = Some("README.md".to_string());
         let schema = config_schema(&config);
