@@ -354,6 +354,19 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
         // whether to write them.
         &[("off", "No checksums"), ("on", "Checksums on")],
     ));
+    rules.push(choice(
+        path(&["confirmations"]),
+        "Confirmations are measured against",
+        Icon::Lock,
+        // What decides whether a confirmation still stands (prov 0.19). Under
+        // `content` each entry names the content digest it confirmed, which a
+        // tool can also check against the document's history; under `stamp`
+        // an edit stamp later than the entry unseats it.
+        &[
+            ("stamp", "The edit stamp"),
+            ("content", "The content confirmed"),
+        ],
+    ));
     rules.push(costly_when(
         toggle(path(&["record_deletions"]), "Record deletions"),
         false,
@@ -653,6 +666,19 @@ mod costly_tests {
                 "{field} guards values its vocabulary does not offer: {orphans:?}"
             );
         }
+    }
+
+    /// What a confirmation is measured against is a picker over prov's two
+    /// answers, not free text.
+    #[test]
+    fn confirmations_are_a_choice_of_stamp_or_content() {
+        let schema = schema();
+        let rule = schema
+            .rule_for(&[key("confirmations")])
+            .expect("confirmations should be governed");
+        let (terms, _) = rule.enum_constraint().expect("a choice");
+        let values: Vec<&str> = terms.iter().map(|t| t.value.as_str()).collect();
+        assert_eq!(values, ["stamp", "content"]);
     }
 
     /// An ordinary field is untouched by any of this.
