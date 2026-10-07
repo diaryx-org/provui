@@ -367,6 +367,19 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
             ("content", "The content confirmed"),
         ],
     ));
+    rules.push(choice(
+        path(&["actors"]),
+        "People are named",
+        Icon::Link,
+        // Whether a person in `by`, `confirmed[].by` or an actor field must be
+        // a link to their person document (prov 0.19). Under `declared` a
+        // bare name is a finding, which prov can fix when exactly one person
+        // page matches it.
+        &[
+            ("free", "However they are written"),
+            ("declared", "By a link to their page"),
+        ],
+    ));
     rules.push(costly_when(
         toggle(path(&["record_deletions"]), "Record deletions"),
         false,
@@ -679,6 +692,18 @@ mod costly_tests {
         let (terms, _) = rule.enum_constraint().expect("a choice");
         let values: Vec<&str> = terms.iter().map(|t| t.value.as_str()).collect();
         assert_eq!(values, ["stamp", "content"]);
+    }
+
+    /// How a person is named is a picker over prov's two answers.
+    #[test]
+    fn actors_are_a_choice_of_free_or_declared() {
+        let schema = schema();
+        let rule = schema
+            .rule_for(&[key("actors")])
+            .expect("actors should be governed");
+        let (terms, _) = rule.enum_constraint().expect("a choice");
+        let values: Vec<&str> = terms.iter().map(|t| t.value.as_str()).collect();
+        assert_eq!(values, ["free", "declared"]);
     }
 
     /// An ordinary field is untouched by any of this.
