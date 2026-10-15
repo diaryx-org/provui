@@ -642,16 +642,16 @@ publish` verifies by building, and would build against it.
 
 ### CI and releasing
 
-`cargo xtask ci` runs what CI runs, in the same order — format, clippy, tests,
-docs, `provui-core` checked on its own, and the MSRV — and `cargo xtask <job>`
-runs one. `.github/workflows/ci.yml` reads the job list from `cargo xtask
-ci-matrix`, so a job is added or renamed in `xtask/src/main.rs` and nowhere
-else.
+`ship ci` runs what CI runs, in the same order — format, clippy, tests, docs,
+`provui-core` checked on its own, and the MSRV — and `ship ci <job>` runs one.
+`.github/workflows/ci.yml` reads the job list from `ship ci --matrix`, so a job
+is added or renamed in the `job` list in `.config/ship.figl` and nowhere else.
 
-Releases are cut with the org's shared tooling — `release <spec>` bumps,
-regenerates [`docs/CHANGELOG.md`](docs/CHANGELOG.md), commits and tags, and
-pushing the tag runs `publish.yml`, which uploads `provui-core`. `provui-tui` is
-`publish = false` and stays in the checkout; its manifest says why.
+Releases are cut with [ship](https://github.com/diaryx-org/ship): `ship <spec>`
+bumps, regenerates [`docs/CHANGELOG.md`](docs/CHANGELOG.md), commits and tags,
+and pushes only with `--push`. provui is not on crates.io — it is consumed from
+git, by commit — so a tag is a name for a commit and sets nothing off. What this
+repository states for itself is in [`.config/ship.figl`](.config/ship.figl).
 
 ## License
 

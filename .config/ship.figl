@@ -1,0 +1,77 @@
+# What ship needs to know about provui: its release, and its CI. Everything not
+# stated here is ship's default — the manifest, the changelog path, the cliff
+# config, and that this is a Cargo workspace.
+name = provui
+url = https://github.com/diaryx-org/provui
+release_branch = main
+
+# No `verify`: before cutting, a release runs the jobs below.
+
+# Not on crates.io: provui is consumed from git, by commit, so a tag is a name
+# for a commit and sets nothing off. provui-core 0.7.0 was the last version
+# uploaded.
+publishes = false
+
+# CI. `.github/workflows/ci.yml` asks `ship ci --matrix` for these and runs one
+# per runner, as `ship ci <id>`; `ship ci` runs them all here, in this order,
+# with the same shell, and stops at the first that fails. Changing CI is an edit
+# here and nowhere else.
+#
+# A job is `id` (what `ship ci <id>` takes), `name` (the check GitHub shows as
+# `CI / <name>` — renaming it renames the required status check) and `run` (run
+# by `bash -eo pipefail -c` at the repository root). `runner` is the workflow's:
+# `components` are the rustup components it installs, `toolchain` the Rust it
+# installs (stable when left out), and `builds = false` is the one job that does
+# not compile, so it needs neither the pinned Zig (`fig` and `twig`, under prov,
+# flower and leaf alike, are Zig-backed and their build.rs runs `zig build`) nor
+# the cargo cache. Cheapest and most likely to fail first.
+job
+> *
+> > id = fmt
+> > name = Format
+> > run = cargo fmt --all --check
+> > runner
+> > > components = rustfmt
+> > > builds = false
+> *
+> > id = clippy
+> > name = Clippy
+> > run = cargo clippy --workspace --all-targets -- -D warnings
+> > runner
+> > > components = clippy
+> *
+> > id = test
+> > name = Tests
+> > run = cargo test --workspace
+> *
+> > # A broken intra-doc link is a broken promise on docs.rs, so it fails here
+> > # rather than being discovered after a publish.
+> > id = docs
+> > name = Docs
+> > run = RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps
+> *
+> > # `provui-core` is the crate that goes to crates.io, and it goes alone: a
+> > # consumer gets none of the features `provui-tui` turns on beside it in this
+> > # workspace. Checking it by itself is what proves it builds the way a
+> > # consumer sees it.
+> > id = package-isolation
+> > name = Package isolation
+> > run = cargo check -p provui-core --all-targets
+> *
+> > # The published crate alone, because the floor is a promise to its consumers
+> > # and `provui-tui` does not keep it: the terminal raster path under
+> > # `leaf-ratatui` wants a newer compiler than the core does, and the tui is
+> > # `publish = false`, so nobody is promised anything about it.
+> > #
+> > # The version is read from `[workspace.package] rust-version`, so the pin
+> > # follows the declared floor, here and on the runner alike. `rustup run`
+> > # rather than `cargo +<version>`, which only rustup's proxy knows.
+> > id = msrv
+> > name = MSRV
+> > run = '''
+version=$(sed -n 's/^rust-version = "\(.*\)"$/\1/p' Cargo.toml)
+test -n "$version" || { echo "no rust-version in Cargo.toml" >&2; exit 1; }
+echo "MSRV from Cargo.toml: $version"
+rustup toolchain install "$version" --profile minimal --no-self-update
+rustup run "$version" cargo check -p provui-core --all-targets
+'''
