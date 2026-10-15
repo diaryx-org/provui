@@ -648,7 +648,7 @@ runs one. `.github/workflows/ci.yml` reads the job list from `cargo xtask
 ci-matrix`, so a job is added or renamed in `xtask/src/main.rs` and nowhere
 else.
 
-Releases are cut with the org's shared tooling — `dx release <spec>` bumps,
+Releases are cut with the org's shared tooling — `release <spec>` bumps,
 regenerates [`docs/CHANGELOG.md`](docs/CHANGELOG.md), commits and tags, and
 pushing the tag runs `publish.yml`, which uploads `provui-core`. `provui-tui` is
 `publish = false` and stays in the checkout; its manifest says why.
