@@ -93,8 +93,8 @@ pub fn choice_terms(at: PathPat, title: &str, icon: Icon, values: Vec<Term>) -> 
 }
 
 /// An offered-but-not-enforced pick-list — for a vocabulary this crate cannot
-/// see the whole of (see `metadata.format`), or one where a value it does not
-/// know is still legitimate (see `filing.*.field`).
+/// see the whole of, or one where a value it does not know is still legitimate
+/// (see `filing.*.field`).
 pub fn open_choice(at: PathPat, title: &str, icon: Icon, values: &[(&str, &str)]) -> FieldRule {
     open_choice_terms(
         at,

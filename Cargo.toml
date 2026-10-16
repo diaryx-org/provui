@@ -26,19 +26,18 @@ readme = "README.md"
 publish = false
 
 [workspace.dependencies]
-# The self-describing plaintext workspace library. Defaults to `yaml` alone,
-# which is the carrier `---` frontmatter uses; a frontend that wants JSON/TOML
-# vaults turns those features on.
+# The self-describing plaintext workspace library. It reads every metadata
+# format it knows — YAML, JSON, TOML, figl — with no features to turn on.
 #
 # From git, not crates.io: prov is an org repository that does not publish, and
 # every repository that builds against it names this same source — `branch =
 # "main"`, written identically — so diaryx, which links provui-core and prov
 # both, holds one prov, at the commit its own Cargo.lock records.
 prov = { git = "https://github.com/diaryx-org/prov", branch = "main" }
-# The Zig-backed config AST + lossless editor prov and flower are both built on.
-# Named directly because `ProvBackend` reaches for `fig::Embed::replace_body` and
-# `fig::Value`, which are the tree and the splice both halves agree on.
-fig = "5"
+# The config AST + lossless editor prov and flower are both built on. Named
+# directly because `ProvBackend` reaches for `fig::Value` and `fig::Editor`,
+# which are the tree and the splice both halves agree on.
+fig = "7"
 # Crash-atomic file writes, and the optimistic check that refuses one when the
 # file moved underneath. prov writes through it too; named directly because a
 # save is one document's bytes and none of prov's policy, so `DocumentSession`
@@ -49,9 +48,13 @@ fs-transaction = "0.2"
 # does not know the word "prov" and should not learn it.
 flower-core = { git = "https://github.com/diaryx-org/flower", branch = "main" }
 # The rich-text body editor over twig. `default-features = false` so a consumer
-# that also links `leaf-ffi` unifies on one leaf-core copy and one twig-sys
-# build rather than two.
-leaf-core = { git = "https://github.com/diaryx-org/leaf", branch = "main", default-features = false }
+# that also links `leaf-ffi` unifies on one leaf-core copy rather than two.
+#
+# TEMPORARY: `branch = "cc/modest-mendel-tw57ql"` is leaf's twig 6 port
+# (diaryx-org/leaf#11), which provui needs to share one twig with prov and
+# flower. It goes back to `branch = "main"` — here and on `leaf-ratatui` below —
+# once leaf#11 merges.
+leaf-core = { git = "https://github.com/diaryx-org/leaf", branch = "cc/modest-mendel-tw57ql", default-features = false }
 
 # The two terminal widgets, which `provui-tui` embeds.
 #
@@ -63,5 +66,14 @@ leaf-core = { git = "https://github.com/diaryx-org/leaf", branch = "main", defau
 # be a second, different type. (`cargo tree -i leaf-core` proves there is
 # one.) To build against a checkout instead, turn on the git-URL patches in
 # `~/diaryx/.cargo/patches.toml`.
-leaf-ratatui = { git = "https://github.com/diaryx-org/leaf", branch = "main" }
+# TEMPORARY: back to `branch = "main"` once diaryx-org/leaf#11 merges.
+leaf-ratatui = { git = "https://github.com/diaryx-org/leaf", branch = "cc/modest-mendel-tw57ql" }
 flower-ratatui = { git = "https://github.com/diaryx-org/flower", branch = "main" }
+
+# TEMPORARY: prov's `main` still takes fig-schema from its git `master`, while
+# flower takes the published 0.5 — two fig-schemas, and so two `FieldType`s
+# that `schema_from_config` cannot pass from one to the other. prov's move to
+# crates.io (`take fig-schema 0.5 from crates.io`, on its branch
+# `cc/modest-mendel-tw57ql`) unifies them; drop this patch once it merges.
+[patch."https://github.com/diaryx-org/fig-schema"]
+fig-schema = { version = "0.5" }

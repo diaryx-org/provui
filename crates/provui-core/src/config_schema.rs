@@ -38,8 +38,7 @@ use flower_core::{Consequence, FieldType, Icon, Severity, Term, Tint};
 use prov::{FIELD_TYPES, WorkspaceConfig};
 
 use crate::rules::{
-    choice, choice_terms, costly, costly_when, open_choice, open_choice_terms, path, present, term,
-    text, toggle,
+    choice, choice_terms, costly, costly_when, open_choice_terms, path, present, term, text, toggle,
 };
 
 /// The config-document keys the editor should show but refuse to edit: `spec` is
@@ -104,12 +103,11 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
             ],
         ),
         // ── metadata ────────────────────────────────────────────────────────
-        // Open rather than closed: prov compiles `json`/`toml`/`fig` behind
-        // cargo features, so a build that lacks one would reject a spelling that
-        // is perfectly legal elsewhere. Offering without rejecting is the honest
-        // shape for a vocabulary this crate cannot fully see.
+        // Closed: every prov build reads all four, so a spelling outside them
+        // is one prov rejects. `figl` is fig's name for its own dialect, and
+        // the spelling prov writes back.
         costly(
-            open_choice(
+            choice(
                 path(&["metadata", "format"]),
                 "Metadata format",
                 Icon::Enum,
@@ -117,7 +115,7 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
                     ("yaml", "YAML frontmatter"),
                     ("json", "JSON metadata"),
                     ("toml", "TOML metadata"),
-                    ("fig", "fig metadata"),
+                    ("figl", "figl metadata"),
                 ],
             ),
             Tint::Warning,
@@ -129,10 +127,7 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
                 "How metadata is embedded",
                 Icon::Enum,
                 &[
-                    ("delimited", "Fenced frontmatter (`---`)"),
-                    ("code_block", "A fenced code block"),
-                    ("html_script", "A <script> tag"),
-                    ("html_code", "An HTML <code> block"),
+                    ("delimited", "Fenced frontmatter (`---`, `+++`, `---json`)"),
                     ("separate", "A sidecar file beside the document"),
                 ],
             ),
@@ -736,6 +731,7 @@ mod tests {
                     default: None,
                     under: None,
                     stamp: None,
+                    payload: false,
                 }],
             );
         }
@@ -784,7 +780,7 @@ mod tests {
                 continue;
             };
             if !closed {
-                continue; // offered, not enforced — see `metadata.format`
+                continue; // offered, not enforced — see `filing.*.field`
             }
             let Some(path) = concrete(rule) else { continue };
             let dotted = path.join(".");
@@ -854,6 +850,7 @@ mod tests {
                     default: Some(Value::String("open".into())),
                     under: Some(under.to_string()),
                     stamp: None,
+                    payload: false,
                 })
                 .to_vec(),
         );
@@ -869,6 +866,7 @@ mod tests {
                     default: None,
                     under: None,
                     stamp: Some(stamp),
+                    payload: false,
                 }],
             );
         }

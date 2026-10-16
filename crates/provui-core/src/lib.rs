@@ -109,17 +109,22 @@ fn be(e: impl std::fmt::Display) -> BackendError {
     BackendError(e.to_string())
 }
 
-/// Run one expression against whichever fig editor sits behind a
-/// [`MetaEditor`]. The fenced and whole-file editors share every comment
-/// method by name and signature without sharing a trait, so a comment op is
-/// one body written once and matched into both arms.
-macro_rules! with_fig {
-    ($editor:expr, |$e:ident| $body:expr) => {
-        match $editor {
-            MetaEditor::Fenced($e) => $body,
-            MetaEditor::Whole($e) => $body,
-        }
-    };
+/// The fig editor behind a [`MetaEditor`]: a frontmatter block's own editor
+/// (twig hands the block's body to fig) or the whole file's. The comment
+/// surface is fig's, so a comment op reaches it the same way for either.
+fn fig_editor(editor: &MetaEditor) -> &fig::Editor {
+    match editor {
+        MetaEditor::Fenced(embed) => embed.editor(),
+        MetaEditor::Whole(editor, _) => editor,
+    }
+}
+
+/// [`fig_editor`], for a write.
+fn fig_editor_mut(editor: &mut MetaEditor) -> &mut fig::Editor {
+    match editor {
+        MetaEditor::Fenced(embed) => embed.editor_mut(),
+        MetaEditor::Whole(editor, _) => editor,
+    }
 }
 
 /// A comment read is an answer, not a failure, on a format with no comment
@@ -273,16 +278,25 @@ impl ProvBackend {
     /// Replace the prose body, leaving the metadata block untouched — the write
     /// path for edits a `leaf` editor makes to [`body`](Self::body).
     ///
-    /// Uses fig's `Embed::replace_body` (the same lossless primitive prov edits
-    /// through). A frontend that wants fixity/`updated` restamping routes this
-    /// through prov's write path instead; here it demonstrates that the metadata
-    /// and body regions edit independently over one document.
+    /// The block stays byte-for-byte as it was — fences, comments, layout — and
+    /// only the text after its closing fence is replaced, the same split prov
+    /// parses by ([`Document::split`]). A frontend that wants fixity/`updated`
+    /// restamping routes this through prov's write path instead; here it
+    /// demonstrates that the metadata and body regions edit independently over
+    /// one document.
     pub fn set_body(&mut self, body: &str) -> Result<(), BackendError> {
         match self.document()?.carrier {
-            Some(MetaCarrier::Fenced(kind)) => {
-                let mut embed = fig::Embed::open(self.text.as_bytes(), kind).map_err(be)?;
-                embed.replace_body(body).map_err(be)?;
-                self.text = embed.render().map_err(be)?.to_string();
+            Some(MetaCarrier::Fenced(_)) => {
+                let (_, _, _, after) = Document::split(&self.text)
+                    .ok_or_else(|| BackendError("document has no fenced body to replace".into()))?;
+                let mut text = self.text[..self.text.len() - after.len()].to_string();
+                // A closing fence that ends the file has no line ending of its
+                // own; give it one before a body goes under it.
+                if !body.is_empty() && !text.ends_with('\n') {
+                    text.push('\n');
+                }
+                text.push_str(body);
+                self.text = text;
                 Ok(())
             }
             _ => Err(BackendError(
@@ -354,19 +368,19 @@ impl Backend for ProvBackend {
             // add after a delete leaves the document as it was.
             EditOp::SetLeadingComment { path, text } => {
                 let path = to_fig(&path);
-                with_fig!(&mut editor, |e| {
-                    e.delete_leading_comment(&path).map_err(be)?;
-                    if let Some(text) = &text {
-                        e.add_leading_comment(&path, text).map_err(be)?;
-                    }
-                })
+                let e = fig_editor_mut(&mut editor);
+                e.delete_leading_comment(&path).map_err(be)?;
+                if let Some(text) = &text {
+                    e.add_leading_comment(&path, text).map_err(be)?;
+                }
             }
             EditOp::SetTrailingComment { path, text } => {
                 let path = to_fig(&path);
-                with_fig!(&mut editor, |e| match &text {
+                let e = fig_editor_mut(&mut editor);
+                match &text {
                     Some(text) => e.set_trailing_comment(&path, text).map_err(be)?,
                     None => e.delete_trailing_comment(&path).map_err(be)?,
-                })
+                }
             }
         }
 
@@ -392,7 +406,7 @@ impl Backend for ProvBackend {
             return Ok(None);
         };
         let path = to_fig(path);
-        comment_read(with_fig!(&editor, |e| e.leading_comment(&path)))
+        comment_read(fig_editor(&editor).leading_comment(&path))
     }
 
     fn trailing_comment(&self, path: &[Seg]) -> Result<Option<String>, BackendError> {
@@ -400,7 +414,7 @@ impl Backend for ProvBackend {
             return Ok(None);
         };
         let path = to_fig(path);
-        comment_read(with_fig!(&editor, |e| e.trailing_comment(&path)))
+        comment_read(fig_editor(&editor).trailing_comment(&path))
     }
 
     /// The documents a picker on this reference field should offer — whatever
@@ -636,9 +650,10 @@ Body prose.
 
     #[test]
     fn json_frontmatter_has_no_comments_to_read_and_refuses_to_write_one() {
-        // `;;;` is the JSON frontmatter fence; `---` around `{…}` would be
-        // YAML, which a `{…}` is a flow mapping of, and which has comments.
-        let doc = ";;;\n{\"title\": \"Note\"}\n;;;\n# Note\n";
+        // `---json` is the JSON frontmatter fence; a bare `---` around `{…}`
+        // would be YAML, which a `{…}` is a flow mapping of, and which has
+        // comments.
+        let doc = "---json\n{\"title\": \"Note\"}\n---\n# Note\n";
         let mut backend = ProvBackend::open("note.md", doc).expect("open");
         let title = vec![Seg::Key("title".into())];
         assert_eq!(backend.leading_comment(&title).unwrap(), None);
@@ -653,6 +668,19 @@ Body prose.
                 .is_err()
         );
         assert_eq!(backend.source().unwrap(), before);
+    }
+
+    #[test]
+    fn set_body_replaces_the_prose_and_leaves_the_block_byte_for_byte() {
+        let block = "---\n# kept\ntitle: Note   # and this\n---\n";
+        let mut backend = ProvBackend::open("note.md", format!("{block}old body\n")).expect("open");
+        backend.set_body("new body\n").expect("set body");
+        assert_eq!(backend.source().unwrap(), format!("{block}new body\n"));
+
+        // A closing fence that ends the file gets a line ending before a body.
+        let mut bare = ProvBackend::open("note.md", "---\ntitle: Note\n---").expect("open");
+        bare.set_body("prose\n").expect("set body");
+        assert_eq!(bare.source().unwrap(), "---\ntitle: Note\n---\nprose\n");
     }
 
     #[test]

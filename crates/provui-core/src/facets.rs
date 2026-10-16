@@ -479,6 +479,7 @@ content_hash: sha256-abc
                 default: None,
                 under: None,
                 stamp: None,
+                payload: false,
             }],
         );
         config.fields.insert(
@@ -490,6 +491,7 @@ content_hash: sha256-abc
                 default: None,
                 under: None,
                 stamp: Some(Stamp::Edit),
+                payload: false,
             }],
         );
         config
@@ -624,6 +626,7 @@ content_hash: sha256-abc
                 default: None,
                 under: None,
                 stamp: None,
+                payload: false,
             }],
         );
         let facets = Facets::from_config(&config);
@@ -654,6 +657,7 @@ content_hash: sha256-abc
                 default: None,
                 under: Some("[[Tasks]]".to_string()),
                 stamp: None,
+                payload: false,
             }],
         );
         let facets = Facets::from_config(&config);

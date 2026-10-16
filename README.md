@@ -603,14 +603,13 @@ field looks like.
 - [`leaf`](https://github.com/diaryx-org/leaf) — the rich-text document editor
   over `twig` (has `leaf-ratatui`, `leaf-swift`).
 - [`fig`](https://github.com/diaryx-org/fig) /
-  [`twig`](https://github.com/diaryx-org/twig) — the Zig parsing/editing
+  [`twig`](https://github.com/diaryx-org/twig) — the parsing/editing
   libraries underneath both.
 
 ## Building
 
-The dependency chain reaches `fig` and `twig`, which are Zig-backed, so a build
-needs `zig` on `PATH`. `nix develop` in `prov` or
-[`nix`](https://github.com/diaryx-org/nix) provides one.
+The whole dependency chain, `fig` and `twig` included, is plain Rust: a
+stable toolchain is all a build needs.
 
 ```sh
 cargo test --workspace
