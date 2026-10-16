@@ -451,6 +451,7 @@ mod tests {
                 default: None,
                 under: None,
                 stamp: None,
+                payload: false,
             }],
         );
         // A type with no vocabulary — nothing to validate against, but the
@@ -464,6 +465,7 @@ mod tests {
                 default: None,
                 under: None,
                 stamp: None,
+                payload: false,
             }],
         );
 
@@ -475,6 +477,7 @@ mod tests {
                 means: Some("Anyone".to_string()),
                 retired: false,
                 holds: false,
+                also_reads: Vec::new(),
             },
         );
         terms.insert(
@@ -484,6 +487,7 @@ mod tests {
                 means: None,
                 retired: false,
                 holds: false,
+                also_reads: Vec::new(),
             },
         );
         let mut vocabs = BTreeMap::new();
@@ -590,6 +594,7 @@ mod tests {
                 default: None,
                 under: None,
                 stamp: Some(prov::Stamp::Edit),
+                payload: false,
             }],
         );
         let schema = schema_from_config(&config, &BTreeMap::new());
@@ -632,6 +637,7 @@ mod tests {
                 default: None,
                 under: None,
                 stamp: None,
+                payload: false,
             }],
         );
         let schema = schema_from_config(&config, &BTreeMap::new());

@@ -22,9 +22,8 @@ publishes = false
 # by `bash -eo pipefail -c` at the repository root). `runner` is the workflow's:
 # `components` are the rustup components it installs, `toolchain` the Rust it
 # installs (stable when left out), and `builds = false` is the one job that does
-# not compile, so it needs neither the pinned Zig (`fig` and `twig`, under prov,
-# flower and leaf alike, are Zig-backed and their build.rs runs `zig build`) nor
-# the cargo cache. Cheapest and most likely to fail first.
+# not compile, so it skips the cargo cache. Cheapest and most likely to fail
+# first.
 job
 > *
 > > id = fmt

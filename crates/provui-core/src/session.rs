@@ -408,7 +408,8 @@ impl DocumentSession {
     pub fn heading_at_caret(&self) -> Option<Heading> {
         use prov::twig;
 
-        let mut parsed = twig::Document::parse_str(&self.body.source, self.body.format).ok()?;
+        let mut parsed =
+            twig::Document::parse_str(&self.body.source, self.body.format.twig()).ok()?;
         let nodes = parsed.nodes().ok()?;
         let caret = self.body.caret;
         let node = nodes
