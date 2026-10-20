@@ -118,7 +118,8 @@ pub fn open_choice_terms(at: PathPat, title: &str, icon: Icon, values: Vec<Term>
 /// Mark a rule as one where *every* answer costs the same thing.
 ///
 /// For the axes with no safe direction: whichever value you land on, the
-/// workspace gets rewritten. The tint is what draws the row; the
+/// change has the same effect, and `why` says what it is. The tint is what
+/// draws the row; the
 /// [`Consequence`] is what Apply reads before carrying the change out.
 ///
 /// Both, not either — they answer different questions. The tint says how

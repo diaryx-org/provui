@@ -1,13 +1,22 @@
 ---
 title: 'The metadata axes say they rewrite every document, and nothing does'
 part_of: '[Tasks](/docs/tasks/tasks.md)'
-status: open
+status: done
 author: adammharris
 created: 2026-09-20
-updated: 2026-09-20
+updated: 2026-10-20
 ---
 
 # The metadata axes say they rewrite every document, and nothing does
+
+**Status.** Done, by the first of the two choices: both consequences now say
+what applying the change does. Metadata written from now on takes the new
+setting, a new document takes its parent's carrier, and existing documents
+keep theirs until `prov convert <root> metadata.<axis> <value> -r`. The tint
+and `Confirm` weight are unchanged. `a_metadata_axis_says_it_governs_what_is_written_next`
+holds the sentence to that, on the row and on the consequence Apply reads.
+The reference axes' "Rewrites every link" sentences fail the same check
+and are not changed here.
 
 ## The problem
 
