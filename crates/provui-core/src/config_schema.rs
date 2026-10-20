@@ -106,6 +106,12 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
         // Closed: every prov build reads all four, so a spelling outside them
         // is one prov rejects. `figl` is fig's name for its own dialect, and
         // the spelling prov writes back.
+        //
+        // Neither axis rewrites anything on Apply. prov's rule for a config
+        // axis is that it governs what is written next (and `prov new` gives a
+        // child its parent's carrier before the default), while a document
+        // keeps its spelling until `prov convert` restates it. A mixed
+        // workspace is valid and `check`-clean, and the sentence says so.
         costly(
             choice(
                 path(&["metadata", "format"]),
@@ -119,7 +125,9 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
                 ],
             ),
             Tint::Warning,
-            "Rewrites the metadata of every document in the workspace.",
+            "Applies to metadata written from now on: a new document takes its \
+             parent's format. Existing documents keep theirs until converted \
+             with `prov convert <root> metadata.format <value> -r`.",
         ),
         costly(
             choice(
@@ -132,7 +140,9 @@ pub fn config_rules(config: &WorkspaceConfig) -> Vec<FieldRule> {
                 ],
             ),
             Tint::Warning,
-            "Rewrites the metadata of every document in the workspace.",
+            "Applies to metadata written from now on: a new document takes its \
+             parent's shape. Existing documents keep theirs until converted \
+             with `prov convert <root> metadata.embed <value> -r`.",
         ),
     ];
 
@@ -576,6 +586,41 @@ mod costly_tests {
                 rule.severity_of(&Value::Str("anything".into())).is_some(),
                 "{path:?} is tinted but declares no consequence"
             );
+        }
+    }
+
+    /// The metadata axes say what applying them does, which is prov's rule for
+    /// any config axis: the setting governs what is written next, and a
+    /// document keeps its spelling until `prov convert` restates it. Nothing on
+    /// Apply runs that conversion, so a sentence promising a rewrite of every
+    /// document is one the reader learns to click through.
+    #[test]
+    fn a_metadata_axis_says_it_governs_what_is_written_next() {
+        let schema = schema();
+        for axis in ["format", "embed"] {
+            let path = [key("metadata"), key(axis)];
+            let (_, why) = warned(&path).unwrap_or_else(|| panic!("metadata.{axis} should warn"));
+            assert!(
+                !why.contains("Rewrites"),
+                "metadata.{axis} claims a rewrite nothing performs: {why}"
+            );
+            assert!(
+                why.contains("Existing documents keep"),
+                "metadata.{axis} does not say existing documents are left alone: {why}"
+            );
+            let command = format!("prov convert <root> metadata.{axis} <value> -r");
+            assert!(
+                why.contains(&command),
+                "metadata.{axis} does not name the conversion `{command}`: {why}"
+            );
+            // Apply reads the consequence, not the row: it has to say the same.
+            let rule = schema.rule_for(&path).expect("rule");
+            let consequence = rule
+                .on_change
+                .iter()
+                .map(|c| c.message.as_str())
+                .collect::<Vec<_>>();
+            assert_eq!(consequence, [why.as_str()], "metadata.{axis}");
         }
     }
 
