@@ -83,7 +83,8 @@ fn se(e: impl std::fmt::Display) -> SessionError {
 /// would *write* for where the caret is now.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Heading {
-    /// The heading's own words, without its `#` marker.
+    /// The heading's own words, without its `#` marker or its inline markup:
+    /// `## A *big* day` is `A big day`.
     pub text: String,
     /// `1` for an `# H1`, `6` for an `###### H6`.
     pub level: u32,
@@ -396,41 +397,16 @@ impl DocumentSession {
     /// section, and the heading that opened it is the thing a reader would name
     /// to point at where they are.
     ///
-    /// Parsed through twig directly — `prov::twig` is the same copy prov and
-    /// leaf are both built on, so this is the tree leaf is already holding
-    /// rather than a second one with its own opinions. It is parsed again here
-    /// because leaf's own `Doc::nodes` is private: `Doc` exposes `locate` (a
-    /// fragment to a landing) and `link_destination_at_caret` (a caret to a
-    /// link) but nothing that hands back the node array, and nothing that
-    /// answers the caret-to-heading question. The parse is one document's prose
-    /// on a keystroke, which is the same price [`body_links`](Self::body_links)
-    /// pays and for the same reason.
-    pub fn heading_at_caret(&self) -> Option<Heading> {
-        use prov::twig;
-
-        let mut parsed =
-            twig::Document::parse_str(&self.body.source, self.body.format.twig()).ok()?;
-        let nodes = parsed.nodes().ok()?;
-        let caret = self.body.caret;
-        let node = nodes
-            .iter()
-            .filter(|n| n.kind == twig::Kind::Heading)
-            .filter(|n| n.span.start <= caret)
-            .max_by_key(|n| n.span.start)?;
-        // `content_span` is the words without the `#` marker; `text` is twig's
-        // own flattening of the same, and is what a heading with inline marks
-        // in it (`## The *hard* part`) reads as. Prefer the source slice, so
-        // the locator is derived from what is actually written.
-        let text = node
-            .content_span
-            .clone()
-            .and_then(|span| self.body.source.get(span))
-            .map(str::to_string)
-            .or_else(|| node.text.clone())?;
+    /// Answered by leaf ([`Doc::heading_at_caret`]) out of the tree it already
+    /// holds for the body, so the question costs no second parse. `&mut`
+    /// because leaf builds that tree lazily, on the first question after an
+    /// edit.
+    pub fn heading_at_caret(&mut self) -> Option<Heading> {
+        let heading = self.body.heading_at_caret()?;
         Some(Heading {
-            text: text.trim().to_string(),
-            level: node.level.unwrap_or(1),
-            span: node.span.clone(),
+            text: heading.text,
+            level: heading.level,
+            span: heading.span,
         })
     }
 
@@ -442,7 +418,7 @@ impl DocumentSession {
     /// the fragment leaf's `Doc::locate` lands, and `locate`'s third reading —
     /// a heading's own words, slugged — is the one that applies to Markdown,
     /// where there are no ids to name at all.
-    pub fn locator_at_caret(&self) -> Option<String> {
+    pub fn locator_at_caret(&mut self) -> Option<String> {
         self.heading_at_caret()
             .map(|heading| prov::link::slug(&heading.text))
     }
@@ -960,11 +936,13 @@ And what it costs.
         assert_eq!(&body[heading.span.clone()], "# Crash Safety");
         assert_eq!(session.locator_at_caret().as_deref(), Some("crash-safety"));
 
-        // Deeper in, under the sub-heading — and its inline emphasis is part of
-        // the words, so the slug drops the markup the way prov's does.
+        // Deeper in, under the sub-heading. Its words are leaf's, with the
+        // inline markup stripped, and the slug is made from them.
         session.body_mut().caret = at("And what it costs");
         let heading = session.heading_at_caret().expect("under a heading");
+        assert_eq!(heading.text, "The hard part");
         assert_eq!(heading.level, 2);
+        assert_eq!(&body[heading.span.clone()], "## The *hard* part");
         assert_eq!(session.locator_at_caret().as_deref(), Some("the-hard-part"));
     }
 

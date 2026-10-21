@@ -680,23 +680,22 @@ pub fn reference_without_workspace(from: &Path, to: &Path, locator: Option<&str>
 /// a whole.
 pub fn reference_here(
     view: Option<&WorkspaceView>,
-    session: &DocumentSession,
+    session: &mut DocumentSession,
     from: &Path,
 ) -> String {
-    let locator = session.locator_at_caret();
+    let heading = session.heading_at_caret();
+    let locator = heading.as_ref().map(|h| prov::link::slug(&h.text));
     let here = session.path();
-    if let (Some(locator), true) = (locator.as_deref(), same_file(from, here)) {
+    if let (Some(heading), Some(locator), true) =
+        (heading, locator.as_deref(), same_file(from, here))
+    {
         // A link into the document it is written in addresses no document at
         // all: `[The Hard Part](#the-hard-part)`. Written by hand rather than
         // through `format_reference`, which always addresses a document —
         // there is nothing for it to address, and a workspace's path style has
         // no say over a fragment.
-        let label = session
-            .heading_at_caret()
-            .map(|h| h.text)
-            .unwrap_or_else(|| locator.to_string());
         return prov::Link {
-            label: Some(label),
+            label: Some(heading.text),
             target: prov::link::join_locator(String::new(), Some(locator)),
             wikilink: false,
         }
@@ -953,21 +952,21 @@ mod tests {
         // heading's own words. There is no path to write — you are already
         // here.
         assert_eq!(
-            reference_here(Some(&view), &session, &note),
+            reference_here(Some(&view), &mut session, &note),
             "[Crash Safety](#crash-safety)"
         );
 
         // From another document: the workspace's reference to this one, with
         // the same fragment on the end.
         assert_eq!(
-            reference_here(Some(&view), &session, &vault.path("README.md")),
+            reference_here(Some(&view), &mut session, &vault.path("README.md")),
             "[A Note](/notes/note.md#crash-safety)"
         );
 
         // With no workspace at all: a relative markdown link, titled from the
         // path, because there is no config to read a style out of.
         assert_eq!(
-            reference_here(None, &session, &vault.path("README.md")),
+            reference_here(None, &mut session, &vault.path("README.md")),
             "[Note](notes/note.md#crash-safety)"
         );
 
@@ -976,7 +975,7 @@ mod tests {
         session.body_mut().caret = 0;
         assert_eq!(session.locator_at_caret(), None);
         assert_eq!(
-            reference_here(Some(&view), &session, &vault.path("README.md")),
+            reference_here(Some(&view), &mut session, &vault.path("README.md")),
             "[A Note](/notes/note.md)"
         );
     }
