@@ -222,7 +222,7 @@ impl Nav {
     /// document open and nowhere to paste, so it passes the session's own path
     /// and gets the same-document `#locator` form; a frontend with a second
     /// document in hand passes that one instead and gets a path or an id.
-    pub fn reference_here(&self, session: &DocumentSession, from: &Path) -> String {
+    pub fn reference_here(&self, session: &mut DocumentSession, from: &Path) -> String {
         provui_core::reference_here(self.workspace.as_ref(), session, from)
     }
 

@@ -76,7 +76,7 @@ pub fn follow(session: &mut DocumentSession, app: &mut App, screen: Rect) {
 /// that copies from there. A workspace is what supplies the spelling; without
 /// one it is a relative markdown link, which is the only form two paths alone
 /// can justify.
-pub fn show_reference(session: &DocumentSession, app: &mut App) {
+pub fn show_reference(session: &mut DocumentSession, app: &mut App) {
     if !session.has_body() {
         app.status = Some("this document has no prose body to point into".into());
         return;
