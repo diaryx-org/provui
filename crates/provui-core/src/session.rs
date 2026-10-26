@@ -618,8 +618,17 @@ impl DocumentSession {
     /// Because leaf coalesces (see [`sync_history`](Self::sync_history)), eight
     /// `Body` entries may face one leaf step: the first `undo` spends the step,
     /// leaf's `can_undo` turns false, and the next one walks past the remaining
-    /// seven to the `Meta` entry underneath. Without that, a reader would press the key seven times for
-    /// nothing before the metadata edit came back.
+    /// seven to the `Meta` entry underneath. Without that, a reader would press
+    /// the key seven times for nothing before the metadata edit came back.
+    ///
+    /// **A step that is pressed and does not move stops the walk**, in either
+    /// editor. leaf's `can_undo` mirrors twig's stacks exactly and flower's
+    /// `history_len` is its journal, so an entry is only pressed when its
+    /// editor has a step to take; a `false` from it is then a refusal — a
+    /// workspace-maintained key declining its own undo, or twig failing —
+    /// which that editor reports in its status. Reaching past it for an older
+    /// edit would undo something the reader did not ask about, in answer to a
+    /// key press that was answered "no", so the entry stays where it was.
     ///
     /// `true` when something was undone.
     pub fn undo(&mut self) -> bool {
@@ -627,56 +636,19 @@ impl DocumentSession {
             if !self.has_undo(region) {
                 continue;
             }
-            let before = self.counters();
-            // Both editors' undo says whether it moved; the counters below
-            // answer the same question the same way for both.
-            match region {
-                Region::Body => {
-                    self.body.undo();
-                }
-                Region::Meta => {
-                    self.metadata.undo();
-                }
-            }
-            if self.counters() != before {
+            let moved = match region {
+                Region::Body => self.body.undo(),
+                Region::Meta => self.metadata.undo(),
+            };
+            if moved {
                 self.mark_seen();
                 self.redo_journal.push(region);
-                return true;
+            } else {
+                self.journal.push(region);
             }
-            if self.nothing_happened(region) {
-                return false;
-            }
+            return moved;
         }
         false
-    }
-
-    /// What a step that changed nothing means, which is not the same thing in
-    /// the two editors — and `true` when it means the caller should stop.
-    ///
-    /// **flower's `history_len`/`redo_len` are its actual journals**, so a
-    /// history move that changes nothing there is a *refusal*: a
-    /// workspace-maintained key declining its own undo, which flower reports in
-    /// its status. A refusal has to stop the walk. Reaching past it for an
-    /// older edit would undo something the reader did not ask about, in answer
-    /// to a key press that was answered "no".
-    ///
-    /// **leaf's `can_undo`/`can_redo` mirror twig's stacks exactly,** and say
-    /// no for a read-only body, so an exhausted run is passed over before it is
-    /// pressed. A body move that changes nothing anyway is twig failing, which
-    /// leaf reports in its status; there is no key declining anything, so the
-    /// walk carries on to the next entry rather than strand a metadata edit
-    /// behind it.
-    fn nothing_happened(&mut self, region: Region) -> bool {
-        match region {
-            Region::Body => {
-                self.mark_seen();
-                false
-            }
-            Region::Meta => {
-                self.journal.push(region);
-                true
-            }
-        }
     }
 
     /// Put back the most recently undone step, in the editor that made it — the
@@ -689,27 +661,17 @@ impl DocumentSession {
             if !self.has_redo(region) {
                 continue;
             }
-            let before = self.counters();
-            match region {
-                Region::Body => {
-                    self.body.redo();
-                }
-                Region::Meta => {
-                    self.metadata.redo();
-                }
-            }
-            if self.counters() != before {
+            let moved = match region {
+                Region::Body => self.body.redo(),
+                Region::Meta => self.metadata.redo(),
+            };
+            if moved {
                 self.mark_seen();
                 self.journal.push(region);
-                return true;
+            } else {
+                self.redo_journal.push(region);
             }
-            match region {
-                Region::Body => self.mark_seen(),
-                Region::Meta => {
-                    self.redo_journal.push(region);
-                    return false;
-                }
-            }
+            return moved;
         }
         false
     }
@@ -730,19 +692,12 @@ impl DocumentSession {
         }
     }
 
-    /// Both editors' change counters, for telling a step that happened from one
-    /// that was declined.
-    fn counters(&self) -> (u64, u64) {
-        (self.body.revision(), self.metadata.edit_seq())
-    }
-
-    /// Take the counters as read without journalling — what an undo or a redo
-    /// does, since both editors count their own history moves as changes and a
-    /// step back is not a new step.
+    /// Take both editors' change counters as read without journalling — what
+    /// an undo or a redo does, since both editors count their own history moves
+    /// as changes and a step back is not a new step.
     fn mark_seen(&mut self) {
-        let (body, meta) = self.counters();
-        self.seen_body = body;
-        self.seen_meta = meta;
+        self.seen_body = self.body.revision();
+        self.seen_meta = self.metadata.edit_seq();
     }
 
     /// `true` if the metadata or the body has unsaved edits.
@@ -1071,19 +1026,50 @@ And what it costs.
             presses += 1;
             assert!(presses <= 5, "no more presses than there were characters");
         }
-        eprintln!(
-            "JOURNAL {:?} hist={} presses={} body={:?}",
-            session.journal(),
-            session.metadata().history_len(),
-            presses,
-            &session.body().source[..20.min(session.body().source.len())]
-        );
         assert!(session.undo(), "and the metadata edit is next, not buried");
         assert_eq!(
             session.meta().get("title").and_then(|v| v.as_str()),
             Some("Old Title")
         );
         assert!(!session.can_undo());
+    }
+
+    /// The task that made leaf's `can_undo` exact, held at the session: five
+    /// characters typed and undone until the body stops moving leave nothing
+    /// to undo, and every `undo` says whether it moved — the same answer the
+    /// body's revision gives, so a host never has to watch the revision to
+    /// learn it.
+    #[test]
+    fn undo_says_whether_it_moved_and_can_undo_ends_with_the_body() {
+        const DOC: &str = "---\ntitle: Old Title\n---\nOriginal body.\n";
+        let mut session =
+            DocumentSession::from_text("note.md", DOC, BodyFormat::Markdown, None).unwrap();
+        session.body_mut().caret = 0;
+        for c in "typed".chars() {
+            session.body_mut().insert(&c.to_string());
+            session.sync_history();
+        }
+
+        loop {
+            let before = session.body().revision();
+            let moved = session.undo();
+            assert_eq!(
+                moved,
+                session.body().revision() != before,
+                "undo says exactly whether the body moved"
+            );
+            if !moved {
+                break;
+            }
+        }
+        assert_eq!(session.body().source, "Original body.\n");
+        assert!(
+            !session.can_undo(),
+            "nothing left once the body stops moving"
+        );
+        assert!(!session.undo());
+        assert!(session.can_redo());
+        assert!(session.redo());
     }
 
     /// The whole composition, end to end on disk: open → edit both regions →
